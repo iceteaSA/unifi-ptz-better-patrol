@@ -242,9 +242,16 @@ _patrol_home_dwell() {
       home_sampled=1
     fi
 
+    # Classify activity before the external-control check so the freshest live
+    # tracking state can suppress drift detection without changing priority.
+    local activity_active=0
+    if is_tracking "$cam_id" "$motion_hold" "$last_goto_ts" "$settle_seconds" "$cam_state"; then
+      activity_active=1
+    fi
+
     # Check for external control (pan/tilt/zoom drift).
-    # Skip when auto-tracking is enabled — the camera may have moved to track.
-    if (( tracking_enabled == 0 )); then
+    # Skip when live auto-tracking is enabled — the camera may have moved to track.
+    if (( _LAST_TRACKING_ACTIVE == 0 )); then
       if is_externally_controlled "$cam_id" "$cam_name" "$settle_seconds" "$last_goto_ts" "$expected_pan" "$expected_tilt" "$expected_zoom"; then
         external_control_until=$(( $(date +%s) + manual_hold ))
         log "$cam_name" "info" "External control detected during home dwell — holding patrol for ${manual_hold}s"
@@ -253,7 +260,7 @@ _patrol_home_dwell() {
     fi
 
     # Check for motion/tracking (with motor-induced motion filtering)
-    if is_tracking "$cam_id" "$motion_hold" "$last_goto_ts" "$settle_seconds" "$cam_state"; then
+    if (( activity_active )); then
       log "$cam_name" "info" "Activity during home dwell — holding"
       return 1
     fi
@@ -472,11 +479,20 @@ patrol_camera() {
       continue
     fi
 
-    if is_externally_controlled "$cam_id" "$cam_name" "$settle_seconds" "$last_goto_ts" "$expected_pan" "$expected_tilt" "$expected_zoom"; then
-      external_control_until=$(( $(date +%s) + manual_hold ))
-      log "$cam_name" "info" "External control detected — holding patrol for ${manual_hold}s"
-      sleep 5
-      continue
+    # Classify activity before the external-control check so the freshest live
+    # tracking state can suppress drift detection without changing priority.
+    local activity_active=0
+    if is_tracking "$cam_id" "$motion_hold" "$last_goto_ts" "$settle_seconds" "$top_state"; then
+      activity_active=1
+    fi
+
+    if (( _LAST_TRACKING_ACTIVE == 0 )); then
+      if is_externally_controlled "$cam_id" "$cam_name" "$settle_seconds" "$last_goto_ts" "$expected_pan" "$expected_tilt" "$expected_zoom"; then
+        external_control_until=$(( $(date +%s) + manual_hold ))
+        log "$cam_name" "info" "External control detected — holding patrol for ${manual_hold}s"
+        sleep 5
+        continue
+      fi
     fi
 
     # --- Hold while tracking/motion is active ---
@@ -484,7 +500,7 @@ patrol_camera() {
     local waited=0
     # First iteration uses the already-fetched top_state; subsequent iterations
     # fetch fresh state since the camera may have moved during the sleep.
-    while is_tracking "$cam_id" "$motion_hold" "$last_goto_ts" "$settle_seconds" "$top_state"; do
+    while (( activity_active )); do
       top_state=""  # Clear so subsequent iterations fetch fresh state
       if (( waited == 0 )); then
         log "$cam_name" "info" "Tracking/motion active — holding"
@@ -492,6 +508,11 @@ patrol_camera() {
       sleep 5
       waited=$((waited + 5))
       api_ensure_auth
+      if is_tracking "$cam_id" "$motion_hold" "$last_goto_ts" "$settle_seconds" "$top_state"; then
+        activity_active=1
+      else
+        activity_active=0
+      fi
       if (( waited >= max_wait )); then
         log "$cam_name" "warn" "Max wait (${max_wait}s) hit — advancing anyway"
         break
@@ -564,10 +585,17 @@ patrol_camera() {
         continue
       fi
 
+      # Classify activity before the external-control check so the freshest live
+      # tracking state can suppress drift detection without changing priority.
+      local activity_active=0
+      if is_tracking "$cam_id" "$motion_hold" "$last_goto_ts" "$settle_seconds" "$cam_state"; then
+        activity_active=1
+      fi
+
       # Check for external control during dwell (pan/tilt/zoom drift via /ptz/position).
-      # Skip when auto-tracking is enabled — the camera may have moved to track a
-      # target, which is not external control.  is_tracking() will catch the activity.
-      if (( tracking_enabled == 0 )); then
+      # Skip when live auto-tracking is enabled — the camera may have moved to track a
+      # target, which is not external control.
+      if (( _LAST_TRACKING_ACTIVE == 0 )); then
         if is_externally_controlled "$cam_id" "$cam_name" "$settle_seconds" "$last_goto_ts" "$expected_pan" "$expected_tilt" "$expected_zoom"; then
           external_control_until=$(( $(date +%s) + manual_hold ))
           log "$cam_name" "info" "External control detected — holding patrol for ${manual_hold}s"
@@ -579,7 +607,7 @@ patrol_camera() {
       # Check for new motion/tracking during dwell (catches pan/tilt manual
       # control since motor movement triggers the motion sensor).
       # Pass last_goto_ts + settle_seconds so motor-induced motion is filtered.
-      if is_tracking "$cam_id" "$motion_hold" "$last_goto_ts" "$settle_seconds" "$cam_state"; then
+      if (( activity_active )); then
         log "$cam_name" "info" "Activity during dwell — holding"
         dwell_interrupted=1
         break

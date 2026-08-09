@@ -324,7 +324,10 @@ api_get_camera_state() {
 #
 # Side-effect: sets _LAST_SMART_ACTIVE=1 if smart detection (AI) is active,
 #              0 otherwise. Used by dynamic auto-tracking to avoid a second API call.
+#              Sets _LAST_TRACKING_ACTIVE to the live auto-tracking state, or 1
+#              when the response is unknown so callers preserve the fail-safe.
 _LAST_SMART_ACTIVE=0
+_LAST_TRACKING_ACTIVE=1
 
 is_tracking() {
   local cam_id=$1 motion_hold=$2
@@ -332,6 +335,7 @@ is_tracking() {
   local settle_seconds=${4:-0}
   local state=${5:-}
   _LAST_SMART_ACTIVE=0
+  _LAST_TRACKING_ACTIVE=1
 
   if [[ -z "$state" ]]; then
     if ! api_get_with_retry "/cameras/$cam_id" 2 3 >/dev/null; then
@@ -344,7 +348,7 @@ is_tracking() {
   # Extract all needed fields in one jq invocation (6→1 process spawn)
   local fields
   fields=$(echo "$state" | jq -r '[
-    (if (.id // "") == "" then "__MISSING_ID__" else .id end),
+    (if (.id // "") == "" then "0" else "1" end),
     (.state // "UNKNOWN"),
     (.isAutoTracking // .isPtzAutoTracking // .isTracking // false),
     (.isSmartDetected // false),
@@ -355,11 +359,11 @@ is_tracking() {
     return 0
   }
 
-  local response_id cam_state tracking smart_detected motion_detected last_motion
-  IFS=$'\t' read -r response_id cam_state tracking smart_detected motion_detected last_motion <<< "$fields"
+  local response_id_present cam_state tracking smart_detected motion_detected last_motion
+  IFS=$'\t' read -r response_id_present cam_state tracking smart_detected motion_detected last_motion <<< "$fields"
 
   # An absent id makes the response unusable even when jq supplied defaults.
-  if [[ "$response_id" == "__MISSING_ID__" ]]; then
+  if [[ "$response_id_present" != "1" ]]; then
     log "$cam_id" "warn" "Invalid camera state response — assuming active (fail-safe)"
     return 0
   fi
@@ -372,9 +376,11 @@ is_tracking() {
 
   # Explicit tracking flag (firmware-dependent, may not exist)
   if [[ "$tracking" == "true" ]]; then
+    _LAST_TRACKING_ACTIVE=1
     _LAST_SMART_ACTIVE=1
     return 0
   fi
+  _LAST_TRACKING_ACTIVE=0
 
   # Real-time smart detection boolean (person/vehicle/animal detected now)
   if [[ "$smart_detected" == "true" ]]; then
