@@ -1,11 +1,11 @@
 {
   "release-type": "simple",
-  "initial-version": "1.0.0",
   "packages": {
     ".": {
       "release-type": "simple",
       "version-file": "VERSION",
-      "changelog-path": "CHANGELOG.md"
+      "changelog-path": "CHANGELOG.md",
+      "release-as": "1.0.0"
     }
   }
 }
