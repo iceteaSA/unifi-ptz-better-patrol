@@ -33,6 +33,11 @@ removed. No hostnames, addresses, credentials, tokens, MACs, serials, or real
 camera names remain. The presets response was not copied because `is_tracking`
 only consumes camera-state JSON.
 
+`patrol_drift.bats` sources the patrol library and uses queue-backed PTZ/API
+stubs to exercise all three drift call sites. It covers convergence, the
+confirmation streak and attempt cap, fail-safe reads, and two-read home
+baseline stabilization without sleeping or contacting hardware.
+
 ### Provenance — read this before trusting the fixture
 
 A fixture is evidence about one system at one moment, not a permanent fact.
