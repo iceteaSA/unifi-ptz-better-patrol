@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.2](https://github.com/iceteaSA/unifi-ptz-better-patrol/compare/v1.0.1...v1.0.2) (2026-08-09)
+
+
+### Bug Fixes
+
+* detect a goto that was accepted but never executed ([3b8005e](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/3b8005e7cc459fa1ae342dab88207bc44287aef4))
+
 ## [1.0.1](https://github.com/iceteaSA/unifi-ptz-better-patrol/compare/v1.0.0...v1.0.1) (2026-08-09)
 
 
