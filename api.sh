@@ -126,7 +126,7 @@ log() {
 
 api_auth() {
   local response
-  response=$(curl -k -D "$_HEADERS_TEMP" -c "$_COOKIE_TEMP" -s -X POST \
+  response=$(curl -k --connect-timeout 3 --max-time 10 -D "$_HEADERS_TEMP" -c "$_COOKIE_TEMP" -s -X POST \
     -H "Content-Type: application/json" \
     -d "$(jq -n --arg u "$_USERNAME" --arg p "$_PASSWORD" \
       '{username:$u, password:$p, rememberMe:true, token:""}')" \
@@ -175,7 +175,7 @@ api_ensure_auth() {
 # mktemp/rm per call, no leak risk if interrupted.
 api_get() {
   # -o writes response body to file; -w prints HTTP code to stdout
-  _LAST_HTTP_CODE=$(curl -k -s -b "$_COOKIE_TEMP" \
+  _LAST_HTTP_CODE=$(curl -k --connect-timeout 3 --max-time 10 -s -b "$_COOKIE_TEMP" \
     --header "TOKEN: $_TOKEN" \
     --header "X-CSRF-Token: $_CSRF_TOKEN" \
     -w '%{http_code}' -o "$_BODY_TEMP" \
@@ -186,7 +186,7 @@ api_get() {
 }
 
 api_post() {
-  curl -k -s -o /dev/null -w "%{http_code}" -X POST \
+  curl -k --connect-timeout 3 --max-time 10 -s -o /dev/null -w "%{http_code}" -X POST \
     "$_NVR_ADDRESS/proxy/protect/api$1" \
     --header "TOKEN: $_TOKEN" \
     --header "X-CSRF-Token: $_CSRF_TOKEN" \
@@ -195,7 +195,7 @@ api_post() {
 
 api_patch() {
   local url=$1 data=$2
-  curl -k -s -o /dev/null -w "%{http_code}" -X PATCH \
+  curl -k --connect-timeout 3 --max-time 10 -s -o /dev/null -w "%{http_code}" -X PATCH \
     "$_NVR_ADDRESS/proxy/protect/api$url" \
     --header "TOKEN: $_TOKEN" \
     --header "X-CSRF-Token: $_CSRF_TOKEN" \
