@@ -221,12 +221,16 @@ _patrol_home_dwell() {
 
   log "$cam_name" "info" "→ Home (between cycles) [HTTP $hbc_code]"
   last_goto_ts=$(date +%s)
-  # Home position has no preset data — sample live position after settle
+  # Home position has no preset data — establish a stable live baseline after settle.
   expected_pan=-1; expected_tilt=-1; expected_zoom=-1
   local home_sampled=0
+  local home_sample_valid=0
+  local home_sample_pan=-1 home_sample_tilt=-1 home_sample_zoom=-1
+  local home_baseline_ready=0
   local home_drift_count=0 home_previous_drift=0
   local home_activity_checked=0
   local home_unknown_seconds=0
+  local home_pan_stable_thresh=200 home_tilt_stable_thresh=200 home_zoom_stable_thresh=30
 
   local hbc_remaining=$dwell
   while (( hbc_remaining > 0 )); do
@@ -251,12 +255,40 @@ _patrol_home_dwell() {
       continue
     fi
 
-    # Sample live position once after settle (home has no preset data)
+    # Keep sampling after settle until two consecutive reads are materially
+    # unchanged. A first read can still be mid-transit to home.
     local now
     now=$(date +%s)
+    home_baseline_ready=0
     if (( home_sampled == 0 && now - last_goto_ts >= settle_seconds )); then
-      IFS=$'\t' read -r expected_pan expected_tilt expected_zoom <<< "$(api_get_ptz_position "$cam_id")"
-      home_sampled=1
+      local sample_pan sample_tilt sample_zoom
+      IFS=$'\t' read -r sample_pan sample_tilt sample_zoom <<< "$(api_get_ptz_position "$cam_id")"
+      if [[ "$sample_pan" =~ ^[0-9]+$ && "$sample_tilt" =~ ^[0-9]+$ && "$sample_zoom" =~ ^[0-9]+$ ]]; then
+        if (( home_sample_valid == 1 )); then
+          local sample_pan_diff=$(( sample_pan - home_sample_pan ))
+          local sample_tilt_diff=$(( sample_tilt - home_sample_tilt ))
+          local sample_zoom_diff=$(( sample_zoom - home_sample_zoom ))
+          sample_pan_diff=${sample_pan_diff#-}
+          sample_tilt_diff=${sample_tilt_diff#-}
+          sample_zoom_diff=${sample_zoom_diff#-}
+          if (( sample_pan_diff <= home_pan_stable_thresh &&
+                sample_tilt_diff <= home_tilt_stable_thresh &&
+                sample_zoom_diff <= home_zoom_stable_thresh )); then
+            expected_pan=$sample_pan
+            expected_tilt=$sample_tilt
+            expected_zoom=$sample_zoom
+            home_sampled=1
+            home_baseline_ready=1
+            log "$cam_name" "debug" "Home baseline accepted after stable position reads"
+          fi
+        fi
+        home_sample_pan=$sample_pan
+        home_sample_tilt=$sample_tilt
+        home_sample_zoom=$sample_zoom
+        home_sample_valid=1
+      else
+        home_sample_valid=0
+      fi
     fi
 
     # Classify activity before the external-control check so the freshest live
@@ -278,7 +310,7 @@ _patrol_home_dwell() {
 
     # Check for external control (pan/tilt/zoom drift).
     # Skip when live auto-tracking is enabled — the camera may have moved to track.
-    if (( home_sampled == 1 && _LAST_TRACKING_ACTIVE == 0 )); then
+    if (( home_sampled == 1 && home_baseline_ready == 0 && _LAST_TRACKING_ACTIVE == 0 )); then
       if is_externally_controlled "$cam_id" "$cam_name" "$settle_seconds" "$last_goto_ts" "$expected_pan" "$expected_tilt" "$expected_zoom"; then
         # Retain at least 75% of the previous drift. A ratio handles pan/tilt
         # and zoom's different motor-step scales while rejecting convergence.
