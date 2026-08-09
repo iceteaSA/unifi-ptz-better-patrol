@@ -13,8 +13,18 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Install shellcheck
-        run: sudo apt-get update -qq && sudo apt-get install -y shellcheck
+      - name: Pin shellcheck
+        run: |
+          # Pinned so CI and developer machines agree. apt-get ships an older
+          # shellcheck whose warning set differs, which fails the gate on code
+          # a newer local shellcheck passes.
+          mkdir -p "$RUNNER_TEMP/shellcheck/bin"
+          curl --fail --silent --show-error --location \
+            https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz \
+            | tar -xJ -C "$RUNNER_TEMP/shellcheck" --strip-components=1 shellcheck-v0.11.0/shellcheck
+          mv "$RUNNER_TEMP/shellcheck/shellcheck" "$RUNNER_TEMP/shellcheck/bin/shellcheck"
+          chmod +x "$RUNNER_TEMP/shellcheck/bin/shellcheck"
+          echo "$RUNNER_TEMP/shellcheck/bin" >> "$GITHUB_PATH"
 
       - name: Pin jq to the device version
         run: |
