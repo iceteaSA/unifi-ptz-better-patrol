@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.3](https://github.com/iceteaSA/unifi-ptz-better-patrol/compare/v1.0.2...v1.0.3) (2026-08-09)
+
+
+### Bug Fixes
+
+* wait for the camera to settle before starting a patrol loop ([e43bd8d](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/e43bd8ddc772d69a68cdacc08699c5e809deab16))
+
 ## [1.0.2](https://github.com/iceteaSA/unifi-ptz-better-patrol/compare/v1.0.1...v1.0.2) (2026-08-09)
 
 
