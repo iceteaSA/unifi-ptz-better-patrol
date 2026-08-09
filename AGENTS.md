@@ -156,6 +156,8 @@ logs. `config.json.example` is the schema and gets copied to `config.json` on in
 - Branches: `feature/`, `fix/`, `docs/`, `refactor/`.
 - Commits: imperative present tense, ≤72-char subject, conventional-style prefixes
   (`feat:`, `fix:`, `docs:`) as used in history.
+- Releases are automated with release-please. Only `feat`, `fix`, `docs`, `chore`, `refactor`,
+  `test`, and `ci` commits produce release entries.
 - PRs use `.github/PULL_REQUEST_TEMPLATE.md` and expect hardware test results (device model,
   camera model, Protect version) — say so explicitly when a change was not hardware-tested.
 - Update `README.md` when behavior changes; it documents the patrol loop, detection
