@@ -1,0 +1,25 @@
+{
+  "id": "fixture-camera-0",
+  "state": "CONNECTED",
+  "type": "UVC G6 PTZ",
+  "isAutoTracking": null,
+  "isPtzAutoTracking": null,
+  "isTracking": null,
+  "isSmartDetected": false,
+  "isMotionDetected": false,
+  "lastMotion": 1786279904889,
+  "lastSmartDetect": null,
+  "featureFlags": {
+    "canOpticalZoom": false,
+    "isPtz": true,
+    "canPtz": false
+  },
+  "smartDetectSettings": {
+    "autoTrackingObjectTypes": [
+      "person"
+    ]
+  },
+  "ptz": {
+    "returnHomeAfterInactivityMs": null
+  }
+}

@@ -21,6 +21,13 @@ The local runner is ignored by Git. CI can run the same setup command.
 ```
 
 The missing-field test is a characterization test for a known source defect:
-`.id // empty` collapses the positional jq `@tsv` output when `id` is absent.
-It must be replaced with an invalid-response assertion after that source bug is
-fixed.
+`.id // empty` once collapsed the positional jq `@tsv` output when `id` was
+absent. It now asserts the corrected invalid-response fail-safe.
+
+## Hardware fixture
+
+`fixtures/camera-0.json` is derived from a live UNVR camera response. The
+camera identifier was replaced with `fixture-camera-0`, and the camera name was
+removed. No hostnames, addresses, credentials, tokens, MACs, serials, or real
+camera names remain. The presets response was not copied because `is_tracking`
+only consumes camera-state JSON.

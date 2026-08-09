@@ -7,7 +7,7 @@ _LOG_LEVEL=3
 tracking_probe() {
   is_tracking "$@"
   local rc=$?
-  printf '\n__status=%s smart=%s\n' "$rc" "$_LAST_SMART_ACTIVE"
+  printf '\n__status=%s smart=%s tracking=%s\n' "$rc" "$_LAST_SMART_ACTIVE" "$_LAST_TRACKING_ACTIVE"
   return "$rc"
 }
 

@@ -5,6 +5,7 @@ load test_helper
 setup() {
   _LOG_LEVEL=3
   _LAST_SMART_ACTIVE=0
+  _LAST_TRACKING_ACTIVE=1
 }
 
 @test "explicit isAutoTracking flag holds patrol" {
@@ -13,7 +14,7 @@ setup() {
   run tracking_probe cam-1 60 0 0 "$state"
 
   assert_detected_without_failsafe
-  assert_contains "$output" "__status=0 smart=1"
+  assert_contains "$output" "__status=0 smart=1 tracking=1"
 }
 
 @test "explicit isPtzAutoTracking flag holds patrol" {
@@ -22,7 +23,7 @@ setup() {
   run tracking_probe cam-1 60 0 0 "$state"
 
   assert_detected_without_failsafe
-  assert_contains "$output" "__status=0 smart=1"
+  assert_contains "$output" "__status=0 smart=1 tracking=1"
 }
 
 @test "explicit isTracking flag holds patrol" {
@@ -31,7 +32,7 @@ setup() {
   run tracking_probe cam-1 60 0 0 "$state"
 
   assert_detected_without_failsafe
-  assert_contains "$output" "__status=0 smart=1"
+  assert_contains "$output" "__status=0 smart=1 tracking=1"
 }
 
 @test "smart detection holds patrol and marks smart activity" {
@@ -40,7 +41,7 @@ setup() {
   run tracking_probe cam-1 60 0 0 "$state"
 
   assert_detected_without_failsafe
-  assert_contains "$output" "__status=0 smart=1"
+  assert_contains "$output" "__status=0 smart=1 tracking=0"
 }
 
 @test "real-time motion holds patrol" {
@@ -49,7 +50,7 @@ setup() {
   run tracking_probe cam-1 60 0 0 "$state"
 
   assert_detected_without_failsafe
-  assert_contains "$output" "__status=0 smart=0"
+  assert_contains "$output" "__status=0 smart=0 tracking=0"
 }
 
 @test "recent lastMotion holds patrol" {
@@ -60,7 +61,7 @@ setup() {
   run tracking_probe cam-1 60 0 0 "$state"
 
   assert_detected_without_failsafe
-  assert_contains "$output" "__status=0 smart=0"
+  assert_contains "$output" "__status=0 smart=0 tracking=0"
 }
 
 @test "stale lastMotion allows patrol to advance" {
@@ -69,7 +70,7 @@ setup() {
   run tracking_probe cam-1 60 0 0 "$state"
 
   [ "$status" -eq 1 ]
-  assert_contains "$output" "__status=1 smart=0"
+  assert_contains "$output" "__status=1 smart=0 tracking=0"
   assert_not_contains "$output" "Failed to fetch camera state — assuming active (fail-safe)"
   assert_not_contains "$output" "Invalid camera state response — assuming active (fail-safe)"
 }
@@ -80,6 +81,7 @@ setup() {
   run tracking_probe cam-1 60 0 0 "$state"
 
   assert_detected_without_failsafe
+  assert_contains "$output" "__status=0 smart=0 tracking=1"
   assert_contains "$output" "Camera state=DISCONNECTED — treating as active"
 }
 
@@ -89,7 +91,7 @@ setup() {
   run tracking_probe cam-1 60 0 0 "$state"
 
   [ "$status" -eq 1 ]
-  assert_contains "$output" "__status=1 smart=0"
+  assert_contains "$output" "__status=1 smart=0 tracking=0"
   assert_not_contains "$output" "assuming active (fail-safe)"
 }
 
@@ -102,7 +104,7 @@ setup() {
   run tracking_probe cam-1 60 "$((now_s - 1))" 20 "$state"
 
   [ "$status" -eq 1 ]
-  assert_contains "$output" "__status=1 smart=0"
+  assert_contains "$output" "__status=1 smart=0 tracking=0"
   assert_not_contains "$output" "assuming active (fail-safe)"
 }
 
@@ -115,13 +117,14 @@ setup() {
   run tracking_probe cam-1 60 "$((now_s - 30))" 10 "$state"
 
   assert_detected_without_failsafe
-  assert_contains "$output" "__status=0 smart=0"
+  assert_contains "$output" "__status=0 smart=0 tracking=0"
 }
 
 @test "malformed camera state uses invalid-response fail-safe" {
   run tracking_probe cam-1 60 0 0 'not-json'
 
   assert_contains "$output" "__status=0 smart=0"
+  assert_contains "$output" "tracking=1"
   assert_contains "$output" "Invalid camera state response — assuming active (fail-safe)"
   assert_not_contains "$output" "Failed to fetch camera state — assuming active (fail-safe)"
 }
@@ -130,17 +133,27 @@ setup() {
   run tracking_probe cam-1 60 0 0 ""
 
   assert_contains "$output" "__status=0 smart=0"
+  assert_contains "$output" "tracking=1"
   assert_contains "$output" "Failed to fetch camera state — assuming active (fail-safe)"
   assert_not_contains "$output" "Invalid camera state response — assuming active (fail-safe)"
 }
 
-@test "valid state missing every field is pinned as a known field-shift defect" {
-  # Pinned defect: `(.id // empty)` collapses the jq @tsv array, so positional
-  # read shifts fields left. This characterizes current behavior, not the desired
-  # invalid-response handling; remove the pin when the source defect is fixed.
+@test "state without an id uses the invalid-response fail-safe" {
   run tracking_probe cam-1 60 0 0 '{}'
 
-  assert_contains "$output" "__status=0 smart=0"
-  assert_contains "$output" "Camera state=false — treating as active"
-  assert_not_contains "$output" "Invalid camera state response — assuming active (fail-safe)"
+  assert_contains "$output" "__status=0 smart=0 tracking=1"
+  assert_contains "$output" "Invalid camera state response — assuming active (fail-safe)"
+  assert_not_contains "$output" "Camera state=false — treating as active"
+}
+
+@test "real camera state fixture is all-clear and permits drift checks" {
+  local fixture state
+  fixture="$BATS_TEST_DIRNAME/fixtures/camera-0.json"
+  state=$(jq -c . "$fixture")
+
+  run tracking_probe fixture-camera-0 60 0 0 "$state"
+
+  [ "$status" -eq 1 ]
+  assert_contains "$output" "__status=1 smart=0 tracking=0"
+  assert_not_contains "$output" "assuming active (fail-safe)"
 }
