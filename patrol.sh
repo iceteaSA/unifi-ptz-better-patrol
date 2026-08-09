@@ -33,6 +33,7 @@ is_externally_controlled() {
   local expected_pan=$5
   local expected_tilt=$6
   local expected_zoom=$7
+  _LAST_DRIFT_MAGNITUDE=0
 
   local now; now=$(date +%s)
 
@@ -50,7 +51,7 @@ is_externally_controlled() {
   local live_pan live_tilt live_zoom
   IFS=$'\t' read -r live_pan live_tilt live_zoom <<< "$(api_get_ptz_position "$cam_id")"
 
-  if (( live_pan < 0 )); then
+  if [[ ! "$live_pan" =~ ^[0-9]+$ || ! "$live_tilt" =~ ^[0-9]+$ || ! "$live_zoom" =~ ^[0-9]+$ ]]; then
     # Failed to read — fail-safe, don't flag as external
     return 1
   fi
@@ -61,23 +62,29 @@ is_externally_controlled() {
   #   zoom: 30  steps (~3% of 0-1000 range)
   local pan_thresh=200 tilt_thresh=200 zoom_thresh=30
   local pan_diff=0 tilt_diff=0 zoom_diff=0
+  local drift_magnitude=0
   local drifted=""
 
   if (( expected_pan >= 0 )); then
     pan_diff=$(( live_pan - expected_pan ))
     pan_diff=${pan_diff#-}
+    (( pan_diff > drift_magnitude )) && drift_magnitude=$pan_diff
     (( pan_diff > pan_thresh )) && drifted+="pan(${expected_pan}→${live_pan}) "
   fi
   if (( expected_tilt >= 0 )); then
     tilt_diff=$(( live_tilt - expected_tilt ))
     tilt_diff=${tilt_diff#-}
+    (( tilt_diff > drift_magnitude )) && drift_magnitude=$tilt_diff
     (( tilt_diff > tilt_thresh )) && drifted+="tilt(${expected_tilt}→${live_tilt}) "
   fi
   if (( expected_zoom >= 0 )); then
     zoom_diff=$(( live_zoom - expected_zoom ))
     zoom_diff=${zoom_diff#-}
+    (( zoom_diff > drift_magnitude )) && drift_magnitude=$zoom_diff
     (( zoom_diff > zoom_thresh )) && drifted+="zoom(${expected_zoom}→${live_zoom}) "
   fi
+
+  _LAST_DRIFT_MAGNITUDE=$drift_magnitude
 
   log "$cam_name" "debug" "PTZ check: pan=${live_pan}/${expected_pan} tilt=${live_tilt}/${expected_tilt} zoom=${live_zoom}/${expected_zoom}"
 
@@ -217,6 +224,7 @@ _patrol_home_dwell() {
   # Home position has no preset data — sample live position after settle
   expected_pan=-1; expected_tilt=-1; expected_zoom=-1
   local home_sampled=0
+  local home_drift_count=0 home_previous_drift=0
   local home_activity_checked=0
   local home_unknown_seconds=0
 
@@ -233,6 +241,8 @@ _patrol_home_dwell() {
     if api_get_camera_state "$cam_id"; then
       cam_state="$_CACHED_CAM_STATE"
     else
+      home_drift_count=0
+      home_previous_drift=0
       home_unknown_seconds=$(( home_unknown_seconds + hbc_poll ))
       if (( home_unknown_seconds >= 300 )); then
         log "$cam_name" "warn" "Camera unreadable for $(( home_unknown_seconds / 60 ))m during home dwell — holding position (no activity check succeeded)"
@@ -268,12 +278,26 @@ _patrol_home_dwell() {
 
     # Check for external control (pan/tilt/zoom drift).
     # Skip when live auto-tracking is enabled — the camera may have moved to track.
-    if (( _LAST_TRACKING_ACTIVE == 0 )); then
+    if (( home_sampled == 1 && _LAST_TRACKING_ACTIVE == 0 )); then
       if is_externally_controlled "$cam_id" "$cam_name" "$settle_seconds" "$last_goto_ts" "$expected_pan" "$expected_tilt" "$expected_zoom"; then
-        external_control_until=$(( $(date +%s) + manual_hold ))
-        log "$cam_name" "info" "External control detected during home dwell — holding patrol for ${manual_hold}s"
-        return 1
+        # Retain at least 75% of the previous drift. A ratio handles pan/tilt
+        # and zoom's different motor-step scales while rejecting convergence.
+        if (( home_drift_count > 0 && _LAST_DRIFT_MAGNITUDE * 4 >= home_previous_drift * 3 )); then
+          external_control_until=$(( $(date +%s) + manual_hold ))
+          log "$cam_name" "info" "External control detected during home dwell — holding patrol for ${manual_hold}s"
+          home_drift_count=0
+          home_previous_drift=0
+          return 1
+        fi
+        home_drift_count=1
+        home_previous_drift=$_LAST_DRIFT_MAGNITUDE
+      else
+        home_drift_count=0
+        home_previous_drift=0
       fi
+    else
+      home_drift_count=0
+      home_previous_drift=0
     fi
 
     # Check for motion/tracking (with motor-induced motion filtering)
@@ -419,6 +443,7 @@ patrol_camera() {
   local schedule_paused=0
   local tracking_enabled=0
   local unknown_hold_seconds=0
+  local top_drift_count=0 top_previous_drift=0
 
   # Enable auto-tracking once at patrol start (stays on permanently).
   # Only disabled on schedule pause and shutdown.
@@ -489,6 +514,8 @@ patrol_camera() {
       # re-trigger drift detection against the stale pre-hold values
       expected_pan=-1; expected_tilt=-1; expected_zoom=-1
       external_control_until=0
+      top_drift_count=0
+      top_previous_drift=0
       log "$cam_name" "info" "Manual control hold expired — resuming patrol"
     fi
 
@@ -498,6 +525,8 @@ patrol_camera() {
     if api_get_camera_state "$cam_id"; then
       top_state="$_CACHED_CAM_STATE"
     else
+      top_drift_count=0
+      top_previous_drift=0
       unknown_hold_seconds=$(( unknown_hold_seconds + 5 ))
       if (( unknown_hold_seconds >= 300 )); then
         log "$cam_name" "warn" "Camera unreadable for $(( unknown_hold_seconds / 60 ))m — holding position (no activity check succeeded)"
@@ -519,11 +548,26 @@ patrol_camera() {
 
     if (( _LAST_TRACKING_ACTIVE == 0 )); then
       if is_externally_controlled "$cam_id" "$cam_name" "$settle_seconds" "$last_goto_ts" "$expected_pan" "$expected_tilt" "$expected_zoom"; then
-        external_control_until=$(( $(date +%s) + manual_hold ))
-        log "$cam_name" "info" "External control detected — holding patrol for ${manual_hold}s"
+        if (( top_drift_count > 0 && _LAST_DRIFT_MAGNITUDE * 4 >= top_previous_drift * 3 )); then
+          external_control_until=$(( $(date +%s) + manual_hold ))
+          log "$cam_name" "info" "External control detected — holding patrol for ${manual_hold}s"
+          top_drift_count=0
+          top_previous_drift=0
+          sleep 5
+          continue
+        fi
+        top_drift_count=1
+        top_previous_drift=$_LAST_DRIFT_MAGNITUDE
+        # Keep the current target while waiting for the confirming poll.
         sleep 5
         continue
+      else
+        top_drift_count=0
+        top_previous_drift=0
       fi
+    else
+      top_drift_count=0
+      top_previous_drift=0
     fi
 
     # --- Hold while tracking/motion is active ---
@@ -586,6 +630,8 @@ patrol_camera() {
     case "$code" in
       200|204)
         last_goto_ts=$(date +%s)
+        top_drift_count=0
+        top_previous_drift=0
         # Set expected position from preset data.  is_externally_controlled()
         # compares these against the live /ptz/position (motor steps), so the
         # coordinate system matches directly — no ISP zoom scaling needed.
@@ -614,6 +660,7 @@ patrol_camera() {
     local dwell_interrupted=0
     local dwell_activity_checked=0
     local dwell_unknown_seconds=0
+    local dwell_drift_count=0 dwell_previous_drift=0
     while (( dwell_remaining > 0 )); do
       local poll_iv=$(( dwell_remaining < poll_interval_s ? dwell_remaining : poll_interval_s ))
       sleep "$poll_iv"
@@ -624,6 +671,8 @@ patrol_camera() {
       if api_get_camera_state "$cam_id"; then
         cam_state="$_CACHED_CAM_STATE"
       else
+        dwell_drift_count=0
+        dwell_previous_drift=0
         dwell_unknown_seconds=$(( dwell_unknown_seconds + poll_iv ))
         if (( dwell_unknown_seconds >= 300 )); then
           log "$cam_name" "warn" "Camera unreadable for $(( dwell_unknown_seconds / 60 ))m during dwell — holding position (no activity check succeeded)"
@@ -654,11 +703,23 @@ patrol_camera() {
       # target, which is not external control.
       if (( _LAST_TRACKING_ACTIVE == 0 )); then
         if is_externally_controlled "$cam_id" "$cam_name" "$settle_seconds" "$last_goto_ts" "$expected_pan" "$expected_tilt" "$expected_zoom"; then
-          external_control_until=$(( $(date +%s) + manual_hold ))
-          log "$cam_name" "info" "External control detected — holding patrol for ${manual_hold}s"
-          dwell_interrupted=1
-          break
+          if (( dwell_drift_count > 0 && _LAST_DRIFT_MAGNITUDE * 4 >= dwell_previous_drift * 3 )); then
+            external_control_until=$(( $(date +%s) + manual_hold ))
+            log "$cam_name" "info" "External control detected — holding patrol for ${manual_hold}s"
+            dwell_drift_count=0
+            dwell_previous_drift=0
+            dwell_interrupted=1
+            break
+          fi
+          dwell_drift_count=1
+          dwell_previous_drift=$_LAST_DRIFT_MAGNITUDE
+        else
+          dwell_drift_count=0
+          dwell_previous_drift=0
         fi
+      else
+        dwell_drift_count=0
+        dwell_previous_drift=0
       fi
 
       # Check for new motion/tracking during dwell (catches pan/tilt manual
