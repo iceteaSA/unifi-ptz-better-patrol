@@ -251,6 +251,7 @@ api_post_with_retry() {
 
   for (( attempt = 1; attempt <= max_retries; attempt++ )); do
     code=$(api_post "$url")
+    _LAST_HTTP_CODE="$code"
     case "$code" in
       200|204)
         _CONSECUTIVE_FAILURES=0
@@ -295,7 +296,10 @@ _CACHED_CAM_STATE=""
 api_get_camera_state() {
   local cam_id=$1
   _CACHED_CAM_STATE=""
-  _CACHED_CAM_STATE=$(api_get_with_retry "/cameras/$cam_id" 2 3) || return 1
+  if ! api_get_with_retry "/cameras/$cam_id" 2 3 >/dev/null; then
+    return 1
+  fi
+  _CACHED_CAM_STATE="$_LAST_BODY"
   return 0
 }
 
@@ -330,10 +334,11 @@ is_tracking() {
   _LAST_SMART_ACTIVE=0
 
   if [[ -z "$state" ]]; then
-    state=$(api_get_with_retry "/cameras/$cam_id" 2 3) || {
+    if ! api_get_with_retry "/cameras/$cam_id" 2 3 >/dev/null; then
       log "$cam_id" "warn" "Failed to fetch camera state — assuming active (fail-safe)"
       return 0
-    }
+    fi
+    state="$_LAST_BODY"
   fi
 
   # Extract all needed fields in one jq invocation (6→1 process spawn)
@@ -421,7 +426,11 @@ is_tracking() {
 api_get_preset_positions() {
   local cam_id=$1
   local raw
-  raw=$(api_get_with_retry "/cameras/$cam_id/ptz/preset" 2 3) || { echo "[]"; return; }
+  if ! api_get_with_retry "/cameras/$cam_id/ptz/preset" 2 3 >/dev/null; then
+    echo "[]"
+    return
+  fi
+  raw="$_LAST_BODY"
   echo "$raw" | jq '[.[] | {slot: .slot, name: .name, pan: .ptz.pan, tilt: .ptz.tilt, zoom: .ptz.zoom}]' 2>/dev/null || echo "[]"
 }
 
@@ -431,7 +440,11 @@ api_get_preset_positions() {
 api_get_ptz_position() {
   local cam_id=$1
   local raw
-  raw=$(api_get_with_retry "/cameras/$cam_id/ptz/position" 2 3) || { echo "-1	-1	-1"; return; }
+  if ! api_get_with_retry "/cameras/$cam_id/ptz/position" 2 3 >/dev/null; then
+    printf '%s\t%s\t%s\n' -1 -1 -1
+    return
+  fi
+  raw="$_LAST_BODY"
   local fields
   fields=$(echo "$raw" | jq -r '[.steps.pan // -1, .steps.tilt // -1, .steps.zoom // -1] | @tsv' 2>/dev/null) || { echo "-1	-1	-1"; return; }
   echo "$fields"

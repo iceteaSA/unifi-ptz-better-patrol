@@ -204,7 +204,8 @@ _patrol_home_dwell() {
   local manual_hold=$6 dyn_tracking=$7 poll_iv_s=${8:-5}
 
   local hbc_code
-  hbc_code=$(api_post_with_retry "/cameras/$cam_id/ptz/goto/-1" 2 3) || true
+  api_post_with_retry "/cameras/$cam_id/ptz/goto/-1" 2 3 >/dev/null || true
+  hbc_code="$_LAST_HTTP_CODE"
 
   if [[ "$hbc_code" != "200" && "$hbc_code" != "204" ]]; then
     log "$cam_name" "warn" "Failed to go home between cycles (HTTP ${hbc_code:-timeout})"
@@ -340,7 +341,13 @@ patrol_camera() {
   else
     # Fetch from the per-camera preset endpoint (ptzPresetPositions on the
     # camera object is empty on many firmware versions)
-    mapfile -t presets < <(api_get_with_retry "/cameras/$cam_id/ptz/preset" 3 5 | jq -r '
+    local preset_response
+    if api_get_with_retry "/cameras/$cam_id/ptz/preset" 3 5 >/dev/null; then
+      preset_response="$_LAST_BODY"
+    else
+      preset_response="[]"
+    fi
+    mapfile -t presets < <(printf '%s' "$preset_response" | jq -r '
       [. // [] | sort_by(.slot) | .[].slot] | .[]
     ')
   fi
@@ -511,7 +518,8 @@ patrol_camera() {
 
     # --- Move to next preset ---
     local code
-    code=$(api_post_with_retry "/cameras/$cam_id/ptz/goto/$slot" 2 3) || true
+    api_post_with_retry "/cameras/$cam_id/ptz/goto/$slot" 2 3 >/dev/null || true
+    code="$_LAST_HTTP_CODE"
 
     case "$code" in
       200|204)
