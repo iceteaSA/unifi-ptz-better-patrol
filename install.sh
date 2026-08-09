@@ -1,6 +1,16 @@
 #!/bin/bash
 set -e
 
+# Repository information
+REPO_OWNER="iceteaSA"
+REPO_NAME="unifi-ptz-better-patrol"
+BRANCH="${PTZ_PATROL_BRANCH:-main}"
+BASE_URL="https://raw.githubusercontent.com/$REPO_OWNER/$REPO_NAME/$BRANCH"
+
+if [[ "$BRANCH" != "main" ]]; then
+    echo "WARNING: Installing unverified code from branch '$BRANCH' fetched directly from GitHub."
+fi
+
 # Check for root privileges
 if [ "$(id -u)" -ne 0 ]; then
     echo "Error: This script must be run as root (sudo)"
@@ -18,12 +28,6 @@ if ! command -v curl >/dev/null 2>&1; then
     echo "Error: curl is required but not found"
     exit 1
 fi
-
-# Repository information
-REPO_OWNER="iceteaSA"
-REPO_NAME="unifi-ptz-better-patrol"
-BRANCH="${PTZ_PATROL_BRANCH:-main}"
-BASE_URL="https://raw.githubusercontent.com/$REPO_OWNER/$REPO_NAME/$BRANCH"
 
 INSTALL_DIR="/data/ptz-patrol"
 SERVICE_NAME="ptz-patrol"

@@ -70,6 +70,10 @@ curl -sSL https://raw.githubusercontent.com/iceteaSA/unifi-ptz-better-patrol/dev
 PTZ_PATROL_BRANCH=dev curl -sSL https://raw.githubusercontent.com/iceteaSA/unifi-ptz-better-patrol/main/install.sh | sudo bash
 ```
 
+### Security
+
+The installer is the trust root. It is fetched from GitHub over HTTPS with certificate validation, then downloads the files systemd will run as root. Read `install.sh` before piping it to `bash` if you want to verify what it does. Branch installs are fetched directly from that branch and bypass even the implicit review that `main` receives; the installer prints a warning, but does not verify branch contents with a checksum or signature.
+
 ### Manual Installation
 
 If you prefer to inspect the code before installation:
