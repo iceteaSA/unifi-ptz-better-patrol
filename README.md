@@ -325,15 +325,15 @@ The journal has a gap during the outage because of the journald fault described 
 
 ## Resource Usage
 
-Measured on a UNVR with 3 PTZ cameras patrolling (30s dwell, 5s polling):
+The original three-camera figures below came from a UNVR with 30s dwell and 5s polling; the measurement date and hardware architecture were not recorded. The four-camera figures came from a live UNVR (aarch64, Debian 11) measured on 2026-08-09 at 15:25 SAST with `dwell_seconds=20`, `home_between_cycles=true`, and `dynamic_auto_tracking=true`.
 
-| Resource | Value | Notes |
-|----------|-------|-------|
-| **Memory** | ~11 MB total | ~3 MB per process (1 main + 1 per camera) |
-| **CPU** | ~8% of one core | Mostly jq + curl; idle between polls |
-| **Processes** | 4 bash | 1 main + 3 camera subprocesses |
-| **Temp files** | 12 | 3 per process (cookie, headers, body); cleaned on exit |
-| **File descriptors** | 3-4 per process | Minimal; no long-lived connections |
+| Resource | 3-camera baseline | 4-camera field measurement | Notes |
+|----------|-------------------|--------------------------|-------|
+| **Memory** | ~11 MB total | Not measured | The baseline is ~3 MB per process (1 main + 1 per camera). |
+| **CPU** | ~8% of one core | 9.3% of one core | The field measurement was `CPUUsageNSec = 129022000000` over a 1387s active window. An independent ~16.5-hour lifetime average on the same deployment also measured 9.3%, including the camera outage; that is a coarse average with no measurable increase during fail-safe holding, not a controlled comparison. |
+| **Processes** | 4 bash | 6 processes | The field deployment showed 1 main process + 4 camera subshells + 1 `sleep` for rediscovery. |
+| **Temp files** | 12 | Not measured | 3 per process in the baseline (cookie, headers, body); cleaned on exit. |
+| **File descriptors** | 3-4 per process | Not measured | Minimal; no long-lived connections. |
 
 ## Monitoring & Logging
 
