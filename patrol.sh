@@ -121,6 +121,69 @@ is_externally_controlled() {
   return 1
 }
 
+# Wait for the camera to finish a prior movement before the first patrol goto.
+# A bounded startup wait prevents a restart's home command from being mistaken
+# for manual control, while the expiry path keeps an unresponsive camera moving.
+_patrol_wait_for_camera_settle() {
+  local cam_id=$1
+  local cam_name=$2
+  local max_wait_s=${3:-30}
+  local start_ts
+  start_ts=$(date +%s)
+  local now elapsed
+  local previous_pan=-1 previous_tilt=-1 previous_zoom=-1
+  local previous_valid=0
+  local reason="no successful position reads"
+  local pan_thresh=200 tilt_thresh=200 zoom_thresh=30
+
+  while true; do
+    local live_pan live_tilt live_zoom
+    local had_previous=$previous_valid
+    IFS=$'\t' read -r live_pan live_tilt live_zoom <<< "$(api_get_ptz_position "$cam_id")"
+
+    if [[ "$live_pan" == "-1" && "$live_tilt" == "-1" && "$live_zoom" == "-1" ]]; then
+      previous_valid=0
+      reason="position read failed"
+    elif [[ ! "$live_pan" =~ ^[0-9]+$ || ! "$live_tilt" =~ ^[0-9]+$ || ! "$live_zoom" =~ ^[0-9]+$ ]]; then
+      previous_valid=0
+      reason="malformed position response"
+    else
+      if (( previous_valid == 1 )); then
+        local pan_diff=$(( live_pan - previous_pan ))
+        local tilt_diff=$(( live_tilt - previous_tilt ))
+        local zoom_diff=$(( live_zoom - previous_zoom ))
+        pan_diff=${pan_diff#-}
+        tilt_diff=${tilt_diff#-}
+        zoom_diff=${zoom_diff#-}
+        if (( pan_diff <= pan_thresh && tilt_diff <= tilt_thresh && zoom_diff <= zoom_thresh )); then
+          now=$(date +%s)
+          elapsed=$(( now - start_ts ))
+          log "$cam_name" "info" "Camera settled before patrol start after ${elapsed}s"
+          return 0
+        fi
+        reason="position remained in motion"
+      fi
+      previous_pan=$live_pan
+      previous_tilt=$live_tilt
+      previous_zoom=$live_zoom
+      previous_valid=1
+    fi
+
+    now=$(date +%s)
+    elapsed=$(( now - start_ts ))
+    if (( elapsed >= max_wait_s )); then
+      log "$cam_name" "warn" "Camera did not settle within ${max_wait_s}s (${reason}) — starting patrol anyway"
+      return 1
+    fi
+
+    # The second read is immediate so an already-stationary camera adds no
+    # meaningful delay; later movement checks are spaced to bound API load.
+    if (( had_previous == 1 || previous_valid == 0 )); then
+      sleep 1
+    fi
+  done
+}
+
 # Re-issue a goto that was accepted while the camera stayed at the previous
 # preset. The retry count is caller-scoped so the patrol can advance after the
 # bounded limit instead of entering a hold loop.
@@ -571,6 +634,7 @@ patrol_camera() {
   local unknown_hold_seconds=0
   local top_drift_attempts=0 top_drift_streak=0 top_previous_drift=0
   local top_drift_attempt_limit=3
+  local startup_settle_pending=1
 
   # Enable auto-tracking once at patrol start (stays on permanently).
   # Only disabled on schedule pause and shutdown.
@@ -778,6 +842,10 @@ patrol_camera() {
     fi
 
     # --- Move to next preset ---
+    if (( startup_settle_pending == 1 )); then
+      _patrol_wait_for_camera_settle "$cam_id" "$cam_name" 30 || true
+      startup_settle_pending=0
+    fi
     local code
     api_post_with_retry "/cameras/$cam_id/ptz/goto/$slot" 2 3 >/dev/null || true
     code="$_LAST_HTTP_CODE"
