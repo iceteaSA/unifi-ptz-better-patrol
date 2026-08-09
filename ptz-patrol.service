@@ -13,6 +13,15 @@ Restart=on-failure
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
+
+# Sandboxing. Kept deliberately minimal: this daemon needs network egress to the
+# NVR and writes its cookie jar / header / body temp files under /tmp, which
+# PrivateTmp covers. ProtectSystem= and ProtectKernelTunables= are NOT set --
+# they are untested across the UniFi device range and this service runs on
+# hardware we cannot regression-test.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
 # 24h window for log rate limiting
 LogRateLimitIntervalSec=86400
 # Allow 10k logs/day
