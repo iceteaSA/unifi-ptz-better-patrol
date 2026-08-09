@@ -407,7 +407,8 @@ patrol_camera() {
         log "$cam_name" "info" "Outside schedule window (${sched_start}-${sched_end}) — pausing patrol"
         if [[ "$sched_home" == "true" ]]; then
           local home_code
-          home_code=$(api_post_with_retry "/cameras/$cam_id/ptz/goto/-1" 2 3) || true
+          api_post_with_retry "/cameras/$cam_id/ptz/goto/-1" 2 3 >/dev/null || true
+          home_code="$_LAST_HTTP_CODE"
           if [[ "$home_code" == "200" || "$home_code" == "204" ]]; then
             log "$cam_name" "info" "Sent to home position"
           else
