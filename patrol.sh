@@ -227,7 +227,8 @@ _patrol_home_dwell() {
   local home_sample_valid=0
   local home_sample_pan=-1 home_sample_tilt=-1 home_sample_zoom=-1
   local home_baseline_ready=0
-  local home_drift_count=0 home_previous_drift=0
+  local home_drift_attempts=0 home_drift_streak=0 home_previous_drift=0
+  local home_drift_attempt_limit=3
   local home_activity_checked=0
   local home_unknown_seconds=0
   local home_pan_stable_thresh=200 home_tilt_stable_thresh=200 home_zoom_stable_thresh=30
@@ -245,7 +246,8 @@ _patrol_home_dwell() {
     if api_get_camera_state "$cam_id"; then
       cam_state="$_CACHED_CAM_STATE"
     else
-      home_drift_count=0
+      home_drift_attempts=0
+      home_drift_streak=0
       home_previous_drift=0
       home_unknown_seconds=$(( home_unknown_seconds + hbc_poll ))
       if (( home_unknown_seconds >= 300 )); then
@@ -314,21 +316,35 @@ _patrol_home_dwell() {
       if is_externally_controlled "$cam_id" "$cam_name" "$settle_seconds" "$last_goto_ts" "$expected_pan" "$expected_tilt" "$expected_zoom"; then
         # Retain at least 75% of the previous drift. A ratio handles pan/tilt
         # and zoom's different motor-step scales while rejecting convergence.
-        if (( home_drift_count > 0 && _LAST_DRIFT_MAGNITUDE * 4 >= home_previous_drift * 3 )); then
+        if (( home_drift_streak > 0 && _LAST_DRIFT_MAGNITUDE * 4 >= home_previous_drift * 3 )); then
           external_control_until=$(( $(date +%s) + manual_hold ))
           log "$cam_name" "info" "External control detected during home dwell — holding patrol for ${manual_hold}s"
-          home_drift_count=0
+          home_drift_attempts=0
+          home_drift_streak=0
           home_previous_drift=0
           return 1
         fi
-        home_drift_count=1
-        home_previous_drift=$_LAST_DRIFT_MAGNITUDE
+        home_drift_attempts=$(( home_drift_attempts + 1 ))
+        if (( home_drift_attempts >= home_drift_attempt_limit )); then
+          log "$cam_name" "debug" "PTZ drift did not persist during home dwell — continuing"
+          home_drift_attempts=0
+          home_drift_streak=0
+          home_previous_drift=0
+        elif (( home_drift_streak > 0 )); then
+          home_drift_streak=0
+          home_previous_drift=0
+        else
+          home_drift_streak=1
+          home_previous_drift=$_LAST_DRIFT_MAGNITUDE
+        fi
       else
-        home_drift_count=0
+        home_drift_attempts=0
+        home_drift_streak=0
         home_previous_drift=0
       fi
     else
-      home_drift_count=0
+      home_drift_attempts=0
+      home_drift_streak=0
       home_previous_drift=0
     fi
 
@@ -475,7 +491,8 @@ patrol_camera() {
   local schedule_paused=0
   local tracking_enabled=0
   local unknown_hold_seconds=0
-  local top_drift_count=0 top_previous_drift=0
+  local top_drift_attempts=0 top_drift_streak=0 top_previous_drift=0
+  local top_drift_attempt_limit=3
 
   # Enable auto-tracking once at patrol start (stays on permanently).
   # Only disabled on schedule pause and shutdown.
@@ -546,7 +563,8 @@ patrol_camera() {
       # re-trigger drift detection against the stale pre-hold values
       expected_pan=-1; expected_tilt=-1; expected_zoom=-1
       external_control_until=0
-      top_drift_count=0
+      top_drift_attempts=0
+      top_drift_streak=0
       top_previous_drift=0
       log "$cam_name" "info" "Manual control hold expired — resuming patrol"
     fi
@@ -557,7 +575,8 @@ patrol_camera() {
     if api_get_camera_state "$cam_id"; then
       top_state="$_CACHED_CAM_STATE"
     else
-      top_drift_count=0
+      top_drift_attempts=0
+      top_drift_streak=0
       top_previous_drift=0
       unknown_hold_seconds=$(( unknown_hold_seconds + 5 ))
       if (( unknown_hold_seconds >= 300 )); then
@@ -580,25 +599,41 @@ patrol_camera() {
 
     if (( _LAST_TRACKING_ACTIVE == 0 )); then
       if is_externally_controlled "$cam_id" "$cam_name" "$settle_seconds" "$last_goto_ts" "$expected_pan" "$expected_tilt" "$expected_zoom"; then
-        if (( top_drift_count > 0 && _LAST_DRIFT_MAGNITUDE * 4 >= top_previous_drift * 3 )); then
+        if (( top_drift_streak > 0 && _LAST_DRIFT_MAGNITUDE * 4 >= top_previous_drift * 3 )); then
           external_control_until=$(( $(date +%s) + manual_hold ))
           log "$cam_name" "info" "External control detected — holding patrol for ${manual_hold}s"
-          top_drift_count=0
+          top_drift_attempts=0
+          top_drift_streak=0
           top_previous_drift=0
           sleep 5
           continue
         fi
-        top_drift_count=1
-        top_previous_drift=$_LAST_DRIFT_MAGNITUDE
-        # Keep the current target while waiting for the confirming poll.
-        sleep 5
-        continue
+        top_drift_attempts=$(( top_drift_attempts + 1 ))
+        if (( top_drift_attempts >= top_drift_attempt_limit )); then
+          log "$cam_name" "debug" "PTZ drift did not persist — continuing patrol"
+          top_drift_attempts=0
+          top_drift_streak=0
+          top_previous_drift=0
+        elif (( top_drift_streak > 0 )); then
+          top_drift_streak=0
+          top_previous_drift=0
+          sleep 5
+          continue
+        else
+          top_drift_streak=1
+          top_previous_drift=$_LAST_DRIFT_MAGNITUDE
+          # Keep the current target while waiting for the confirming poll.
+          sleep 5
+          continue
+        fi
       else
-        top_drift_count=0
+        top_drift_attempts=0
+        top_drift_streak=0
         top_previous_drift=0
       fi
     else
-      top_drift_count=0
+      top_drift_attempts=0
+      top_drift_streak=0
       top_previous_drift=0
     fi
 
@@ -662,7 +697,8 @@ patrol_camera() {
     case "$code" in
       200|204)
         last_goto_ts=$(date +%s)
-        top_drift_count=0
+        top_drift_attempts=0
+        top_drift_streak=0
         top_previous_drift=0
         # Set expected position from preset data.  is_externally_controlled()
         # compares these against the live /ptz/position (motor steps), so the
@@ -692,7 +728,8 @@ patrol_camera() {
     local dwell_interrupted=0
     local dwell_activity_checked=0
     local dwell_unknown_seconds=0
-    local dwell_drift_count=0 dwell_previous_drift=0
+    local dwell_drift_attempts=0 dwell_drift_streak=0 dwell_previous_drift=0
+    local dwell_drift_attempt_limit=3
     while (( dwell_remaining > 0 )); do
       local poll_iv=$(( dwell_remaining < poll_interval_s ? dwell_remaining : poll_interval_s ))
       sleep "$poll_iv"
@@ -703,7 +740,8 @@ patrol_camera() {
       if api_get_camera_state "$cam_id"; then
         cam_state="$_CACHED_CAM_STATE"
       else
-        dwell_drift_count=0
+        dwell_drift_attempts=0
+        dwell_drift_streak=0
         dwell_previous_drift=0
         dwell_unknown_seconds=$(( dwell_unknown_seconds + poll_iv ))
         if (( dwell_unknown_seconds >= 300 )); then
@@ -735,22 +773,36 @@ patrol_camera() {
       # target, which is not external control.
       if (( _LAST_TRACKING_ACTIVE == 0 )); then
         if is_externally_controlled "$cam_id" "$cam_name" "$settle_seconds" "$last_goto_ts" "$expected_pan" "$expected_tilt" "$expected_zoom"; then
-          if (( dwell_drift_count > 0 && _LAST_DRIFT_MAGNITUDE * 4 >= dwell_previous_drift * 3 )); then
+          if (( dwell_drift_streak > 0 && _LAST_DRIFT_MAGNITUDE * 4 >= dwell_previous_drift * 3 )); then
             external_control_until=$(( $(date +%s) + manual_hold ))
             log "$cam_name" "info" "External control detected — holding patrol for ${manual_hold}s"
-            dwell_drift_count=0
+            dwell_drift_attempts=0
+            dwell_drift_streak=0
             dwell_previous_drift=0
             dwell_interrupted=1
             break
           fi
-          dwell_drift_count=1
-          dwell_previous_drift=$_LAST_DRIFT_MAGNITUDE
+          dwell_drift_attempts=$(( dwell_drift_attempts + 1 ))
+          if (( dwell_drift_attempts >= dwell_drift_attempt_limit )); then
+            log "$cam_name" "debug" "PTZ drift did not persist during dwell — continuing"
+            dwell_drift_attempts=0
+            dwell_drift_streak=0
+            dwell_previous_drift=0
+          elif (( dwell_drift_streak > 0 )); then
+            dwell_drift_streak=0
+            dwell_previous_drift=0
+          else
+            dwell_drift_streak=1
+            dwell_previous_drift=$_LAST_DRIFT_MAGNITUDE
+          fi
         else
-          dwell_drift_count=0
+          dwell_drift_attempts=0
+          dwell_drift_streak=0
           dwell_previous_drift=0
         fi
       else
-        dwell_drift_count=0
+        dwell_drift_attempts=0
+        dwell_drift_streak=0
         dwell_previous_drift=0
       fi
 
