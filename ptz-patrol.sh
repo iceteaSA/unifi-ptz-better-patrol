@@ -27,7 +27,7 @@ shutdown() {
   wait 2>/dev/null || true
 
   if [[ ${#_CAMERA_IDS[@]} -gt 0 ]]; then
-    api_ensure_auth
+    api_ensure_auth || true
 
     # Disable dynamic auto-tracking on cameras that had it enabled
     if [[ ${#_DYN_TRACKING_IDS[@]} -gt 0 ]]; then
@@ -39,7 +39,7 @@ shutdown() {
 
     # Optionally send cameras home on shutdown
     local home_on_shutdown
-    home_on_shutdown=$(cfg '.defaults.home_on_shutdown // false')
+    home_on_shutdown=$(cfg '.defaults.home_on_shutdown // false') || home_on_shutdown=false
     if [[ "$home_on_shutdown" == "true" ]]; then
       log "main" "info" "Sending cameras to home position..."
       for cam_id in "${_CAMERA_IDS[@]}"; do
