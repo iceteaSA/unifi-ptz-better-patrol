@@ -344,7 +344,7 @@ is_tracking() {
   # Extract all needed fields in one jq invocation (6→1 process spawn)
   local fields
   fields=$(echo "$state" | jq -r '[
-    (.id // empty),
+    (if (.id // "") == "" then "__MISSING_ID__" else .id end),
     (.state // "UNKNOWN"),
     (.isAutoTracking // .isPtzAutoTracking // .isTracking // false),
     (.isSmartDetected // false),
@@ -355,11 +355,11 @@ is_tracking() {
     return 0
   }
 
-  local cam_state tracking smart_detected motion_detected last_motion
-  IFS=$'\t' read -r _ cam_state tracking smart_detected motion_detected last_motion <<< "$fields"
+  local response_id cam_state tracking smart_detected motion_detected last_motion
+  IFS=$'\t' read -r response_id cam_state tracking smart_detected motion_detected last_motion <<< "$fields"
 
-  # Validate we got an id (first field, discarded by _)
-  if [[ -z "$cam_state" ]]; then
+  # An absent id makes the response unusable even when jq supplied defaults.
+  if [[ "$response_id" == "__MISSING_ID__" ]]; then
     log "$cam_id" "warn" "Invalid camera state response — assuming active (fail-safe)"
     return 0
   fi
