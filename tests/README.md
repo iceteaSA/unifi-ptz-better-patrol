@@ -38,6 +38,9 @@ stubs to exercise all three drift call sites. It covers convergence, the
 confirmation streak and attempt cap, fail-safe reads, and two-read home
 baseline stabilization without sleeping or contacting hardware.
 
+`failed_goto.bats` covers previous-preset classification, the all-axis guard,
+the failed-goto side channel, bounded re-issues, and fail-safe position reads.
+
 ### Provenance — read this before trusting the fixture
 
 A fixture is evidence about one system at one moment, not a permanent fact.
