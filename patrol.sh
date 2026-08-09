@@ -217,6 +217,8 @@ _patrol_home_dwell() {
   # Home position has no preset data — sample live position after settle
   expected_pan=-1; expected_tilt=-1; expected_zoom=-1
   local home_sampled=0
+  local home_activity_checked=0
+  local home_unknown_seconds=0
 
   local hbc_remaining=$dwell
   while (( hbc_remaining > 0 )); do
@@ -231,6 +233,11 @@ _patrol_home_dwell() {
     if api_get_camera_state "$cam_id"; then
       cam_state="$_CACHED_CAM_STATE"
     else
+      home_unknown_seconds=$(( home_unknown_seconds + hbc_poll ))
+      if (( home_unknown_seconds >= 300 )); then
+        log "$cam_name" "warn" "Camera unreadable for $(( home_unknown_seconds / 60 ))m during home dwell — holding position (no activity check succeeded)"
+        home_unknown_seconds=0
+      fi
       continue
     fi
 
@@ -247,6 +254,16 @@ _patrol_home_dwell() {
     local activity_active=0
     if is_tracking "$cam_id" "$motion_hold" "$last_goto_ts" "$settle_seconds" "$cam_state"; then
       activity_active=1
+    fi
+    if (( _LAST_ACTIVITY_KNOWN == 1 )); then
+      home_activity_checked=1
+      home_unknown_seconds=0
+    else
+      home_unknown_seconds=$(( home_unknown_seconds + hbc_poll ))
+      if (( home_unknown_seconds >= 300 )); then
+        log "$cam_name" "warn" "Camera unreadable for $(( home_unknown_seconds / 60 ))m during home dwell — holding position (no activity check succeeded)"
+        home_unknown_seconds=0
+      fi
     fi
 
     # Check for external control (pan/tilt/zoom drift).
@@ -265,6 +282,11 @@ _patrol_home_dwell() {
       return 1
     fi
   done
+
+  if (( home_activity_checked == 0 )); then
+    log "$cam_name" "warn" "No successful activity checks during home dwell — holding patrol"
+    return 1
+  fi
 
   return 0
 }
@@ -396,6 +418,7 @@ patrol_camera() {
   local external_control_until=0
   local schedule_paused=0
   local tracking_enabled=0
+  local unknown_hold_seconds=0
 
   # Enable auto-tracking once at patrol start (stays on permanently).
   # Only disabled on schedule pause and shutdown.
@@ -475,6 +498,11 @@ patrol_camera() {
     if api_get_camera_state "$cam_id"; then
       top_state="$_CACHED_CAM_STATE"
     else
+      unknown_hold_seconds=$(( unknown_hold_seconds + 5 ))
+      if (( unknown_hold_seconds >= 300 )); then
+        log "$cam_name" "warn" "Camera unreadable for $(( unknown_hold_seconds / 60 ))m — holding position (no activity check succeeded)"
+        unknown_hold_seconds=0
+      fi
       sleep 5
       continue
     fi
@@ -484,6 +512,9 @@ patrol_camera() {
     local activity_active=0
     if is_tracking "$cam_id" "$motion_hold" "$last_goto_ts" "$settle_seconds" "$top_state"; then
       activity_active=1
+    fi
+    if (( _LAST_ACTIVITY_KNOWN == 1 )); then
+      unknown_hold_seconds=0
     fi
 
     if (( _LAST_TRACKING_ACTIVE == 0 )); then
@@ -513,7 +544,16 @@ patrol_camera() {
       else
         activity_active=0
       fi
-      if (( waited >= max_wait )); then
+      if (( _LAST_ACTIVITY_KNOWN == 0 )); then
+        unknown_hold_seconds=$(( unknown_hold_seconds + 5 ))
+        if (( unknown_hold_seconds >= 300 )); then
+          log "$cam_name" "warn" "Camera unreadable for $(( unknown_hold_seconds / 60 ))m — holding position (no activity check succeeded)"
+          unknown_hold_seconds=0
+        fi
+      else
+        unknown_hold_seconds=0
+      fi
+      if (( activity_active && _LAST_ACTIVITY_KNOWN == 1 && waited >= max_wait )); then
         log "$cam_name" "warn" "Max wait (${max_wait}s) hit — advancing anyway"
         break
       fi
@@ -572,6 +612,8 @@ patrol_camera() {
     # pan/tilt/zoom changes (manual control via the Protect app).
     local dwell_remaining=$dwell
     local dwell_interrupted=0
+    local dwell_activity_checked=0
+    local dwell_unknown_seconds=0
     while (( dwell_remaining > 0 )); do
       local poll_iv=$(( dwell_remaining < poll_interval_s ? dwell_remaining : poll_interval_s ))
       sleep "$poll_iv"
@@ -582,6 +624,11 @@ patrol_camera() {
       if api_get_camera_state "$cam_id"; then
         cam_state="$_CACHED_CAM_STATE"
       else
+        dwell_unknown_seconds=$(( dwell_unknown_seconds + poll_iv ))
+        if (( dwell_unknown_seconds >= 300 )); then
+          log "$cam_name" "warn" "Camera unreadable for $(( dwell_unknown_seconds / 60 ))m during dwell — holding position (no activity check succeeded)"
+          dwell_unknown_seconds=0
+        fi
         continue
       fi
 
@@ -590,6 +637,16 @@ patrol_camera() {
       local activity_active=0
       if is_tracking "$cam_id" "$motion_hold" "$last_goto_ts" "$settle_seconds" "$cam_state"; then
         activity_active=1
+      fi
+      if (( _LAST_ACTIVITY_KNOWN == 1 )); then
+        dwell_activity_checked=1
+        dwell_unknown_seconds=0
+      else
+        dwell_unknown_seconds=$(( dwell_unknown_seconds + poll_iv ))
+        if (( dwell_unknown_seconds >= 300 )); then
+          log "$cam_name" "warn" "Camera unreadable for $(( dwell_unknown_seconds / 60 ))m during dwell — holding position (no activity check succeeded)"
+          dwell_unknown_seconds=0
+        fi
       fi
 
       # Check for external control during dwell (pan/tilt/zoom drift via /ptz/position).
@@ -613,6 +670,11 @@ patrol_camera() {
         break
       fi
     done
+
+    if (( dwell_activity_checked == 0 )); then
+      log "$cam_name" "warn" "No successful activity checks during dwell — holding patrol"
+      dwell_interrupted=1
+    fi
 
     if (( dwell_interrupted )); then
       continue  # Skip advancing — go back to top of loop (hold/tracking checks)

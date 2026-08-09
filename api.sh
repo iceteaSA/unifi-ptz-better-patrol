@@ -326,8 +326,10 @@ api_get_camera_state() {
 #              0 otherwise. Used by dynamic auto-tracking to avoid a second API call.
 #              Sets _LAST_TRACKING_ACTIVE to the live auto-tracking state, or 1
 #              when the response is unknown so callers preserve the fail-safe.
+#              Sets _LAST_ACTIVITY_KNOWN=1 only for a valid CONNECTED response.
 _LAST_SMART_ACTIVE=0
 _LAST_TRACKING_ACTIVE=1
+_LAST_ACTIVITY_KNOWN=0
 
 is_tracking() {
   local cam_id=$1 motion_hold=$2
@@ -336,6 +338,7 @@ is_tracking() {
   local state=${5:-}
   _LAST_SMART_ACTIVE=0
   _LAST_TRACKING_ACTIVE=1
+  _LAST_ACTIVITY_KNOWN=0
 
   if [[ -z "$state" ]]; then
     if ! api_get_with_retry "/cameras/$cam_id" 2 3 >/dev/null; then
@@ -373,6 +376,7 @@ is_tracking() {
     log "$cam_id" "warn" "Camera state=$cam_state — treating as active"
     return 0
   fi
+  _LAST_ACTIVITY_KNOWN=1
 
   # Explicit tracking flag (firmware-dependent, may not exist)
   if [[ "$tracking" == "true" ]]; then
