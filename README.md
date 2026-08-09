@@ -317,6 +317,12 @@ The patrol hold checks these signals in priority order:
 - **Camera disconnect handling**: Treats disconnected cameras as "active" (fail-safe hold)
 - **Process isolation**: Each camera has its own cookie jar and auth token (no shared state)
 
+#### Power-outage field report
+
+In a production four-camera UNVR deployment reported on 2026-08-09, a site-wide power outage left the NVR running on UPS while all four cameras were down for about 2.5 hours. Every patrol loop held position through the camera-disconnected fail-safe path. The surrounding journal contains zero `Patrol loop exited — restarting in 10s` entries across about 14 hours, all four camera subshells kept their original PIDs, and patrol resumed without operator action when camera power returned.
+
+The journal has a gap during the outage because of the journald fault described below. This is a field report, not a lab result: the evidence for the outage window is the surviving process table and the surrounding hours of logs, not a continuous record.
+
 ## Resource Usage
 
 Measured on a UNVR with 3 PTZ cameras patrolling (30s dwell, 5s polling):
@@ -389,6 +395,28 @@ View logs with:
 journalctl -u ptz-patrol.service -f                        # Live monitoring
 journalctl -u ptz-patrol.service --since "10 minutes ago"  # Recent history
 journalctl -u ptz-patrol.service -p warning                # Warnings and errors only
+```
+
+## Troubleshooting
+
+### The service looks dead but is still running
+
+**Symptom:** `journalctl -u ptz-patrol` produces no output, while `systemctl status ptz-patrol` shows an active service with a live MainPID. The per-camera subshells are also alive in `ps --ppid <MainPID>`. Restarting `ptz-patrol` does not restore logging, including the startup banner.
+
+This was reported from a live UNVR deployment. The cause was a wedged journald stdout-stream listener. systemd gives the service a socket connected to journald; when that listener breaks, the service's socket is connected to nothing. Restarting the service gets another socket from the same broken listener, so the symptom remains. The patrol loops keep running normally, but writes to the dead socket fail silently. Logs from the wedged window are discarded, not buffered, and cannot be recovered.
+
+A power event and a corrupted rotated journal file from an earlier boot were contributing factors in the reported case. NVRs often stay up on a UPS while their journals take corruption during a power event.
+
+Test the service's stdout socket directly, replacing `<MainPID>` with the PID from `systemctl status`:
+
+```bash
+echo test > /proc/<MainPID>/fd/1
+```
+
+`No such device or address` confirms that the socket has no peer. Restart journald, then the patrol service:
+
+```bash
+systemctl restart systemd-journald && systemctl restart ptz-patrol
 ```
 
 ## Maintenance
