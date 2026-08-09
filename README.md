@@ -1,5 +1,7 @@
 # UniFi PTZ Better Patrol
 
+[![CI](https://github.com/iceteaSA/unifi-ptz-better-patrol/actions/workflows/ci.yml/badge.svg)](https://github.com/iceteaSA/unifi-ptz-better-patrol/actions/workflows/ci.yml)
+
 Motion-aware PTZ camera patrol system for Ubiquiti UniFi Protect devices running UniFi OS.
 
 Confirmed working on: UDM, UDR, UNVR (any device running UniFi Protect with PTZ cameras)

@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get update -qq && sudo apt-get install -y shellcheck
+
+      - name: Pin jq to the device version
+        run: |
+          # UniFi Protect devices run jq 1.6; do not silently test against the runner's newer jq.
+          mkdir -p "$RUNNER_TEMP/jq-1.6/bin"
+          curl --fail --silent --show-error --location \
+            --output "$RUNNER_TEMP/jq-1.6/bin/jq" \
+            https://github.com/jqlang/jq/releases/download/jq-1.6/jq-linux64
+          chmod +x "$RUNNER_TEMP/jq-1.6/bin/jq"
+          echo "$RUNNER_TEMP/jq-1.6/bin" >> "$GITHUB_PATH"
+
+      - name: Verify toolchain
+        run: |
+          bash --version | head -n 1
+          jq --version
+
+      - name: Run shellcheck
+        run: shellcheck -s bash api.sh discover.sh patrol.sh ptz-patrol.sh install.sh uninstall.sh
+
+      - name: Install bats
+        run: npm install --prefix tests/.bats bats@1.13.0 --no-audit --no-fund
+
+      - name: Run bats tests
+        run: tests/.bats/node_modules/.bin/bats tests/
