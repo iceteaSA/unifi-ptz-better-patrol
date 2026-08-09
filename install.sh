@@ -75,6 +75,13 @@ echo "Installing from branch: $BRANCH"
 # Script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# An installed copy must refresh from the repository on update; otherwise its
+# local-file preference turns every destination into a successful no-op.
+INSTALLER_IS_INSTALLED=false
+if [ "$(realpath "$SCRIPT_DIR")" = "$(realpath "$INSTALL_DIR")" ]; then
+    INSTALLER_IS_INSTALLED=true
+fi
+
 # Create install directory
 mkdir -p "$INSTALL_DIR" || {
     echo "Error: Failed to create directory $INSTALL_DIR"
@@ -107,19 +114,19 @@ get_file() {
     local filename="$1"
     local destination="$2"
 
-    # Try to use local file first
-    if [ -f "$SCRIPT_DIR/$filename" ]; then
+    # A checkout is an offline-capable source; the installed copy is not.
+    if [ "$INSTALLER_IS_INSTALLED" = false ] && [ -f "$SCRIPT_DIR/$filename" ]; then
         echo "Using local file: $filename"
-        # Skip copy if source and destination are the same file
-        if [ "$(realpath "$SCRIPT_DIR/$filename")" != "$(realpath "$destination" 2>/dev/null)" ]; then
-            cp "$SCRIPT_DIR/$filename" "$destination"
-        fi
+        cp "$SCRIPT_DIR/$filename" "$destination"
     else
         echo "Downloading $filename from repository..."
-        if ! curl -fsSL "$BASE_URL/$filename" -o "$destination"; then
+        local temp_destination="${destination}.tmp.$$"
+        if ! curl -fsSL "$BASE_URL/$filename" -o "$temp_destination"; then
+            rm -f "$temp_destination"
             echo "Error: Failed to download $filename"
             exit 1
         fi
+        mv "$temp_destination" "$destination"
     fi
 }
 
@@ -139,7 +146,7 @@ echo "=== PTZ Patrol Installer ==="
 install_deps
 
 # Install script files
-for f in api.sh discover.sh patrol.sh ptz-patrol.sh; do
+for f in install.sh api.sh discover.sh patrol.sh ptz-patrol.sh; do
     get_file "$f" "$INSTALL_DIR/$f"
     chmod +x "$INSTALL_DIR/$f"
 done
