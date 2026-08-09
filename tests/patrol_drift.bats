@@ -7,6 +7,7 @@ setup() {
   PTZ_READS=()
   HOME_CAMERA_STATES=()
   PATROL_MODE=""
+  PATROL_SETTLE_CALLS=0
 }
 
 @test "production pan drift converging toward target never holds" {
@@ -228,6 +229,8 @@ setup() {
 @test "top-of-loop converging drift advances to the next preset" {
   PTZ_READS=(
     $'11600\t10400\t100'
+    $'11600\t10400\t100'
+    $'11600\t10400\t100'
     $'8700\t10400\t100'
     $'10200\t10400\t100'
   )
@@ -242,6 +245,8 @@ setup() {
 @test "top-of-loop non-converging drift holds" {
   PTZ_READS=(
     $'11600\t10400\t100'
+    $'11600\t10400\t100'
+    $'11600\t10400\t100'
     $'8700\t10400\t100'
     $'8700\t10400\t100'
   )
@@ -255,6 +260,8 @@ setup() {
 
 @test "normal dwell converging drift advances to the next preset" {
   PTZ_READS=(
+    $'11600\t10400\t100'
+    $'11600\t10400\t100'
     $'8700\t10400\t100'
     $'10200\t10400\t100'
   )
@@ -268,6 +275,8 @@ setup() {
 
 @test "normal dwell non-converging drift holds" {
   PTZ_READS=(
+    $'11600\t10400\t100'
+    $'11600\t10400\t100'
     $'8700\t10400\t100'
     $'8700\t10400\t100'
   )

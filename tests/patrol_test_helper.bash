@@ -3,6 +3,15 @@
 source "$BATS_TEST_DIRNAME/test_helper.bash"
 source "$BATS_TEST_DIRNAME/../patrol.sh"
 
+PATROL_SETTLE_CALLS=0
+_real_patrol_wait_for_camera_settle_definition=$(declare -f _patrol_wait_for_camera_settle)
+_real_patrol_wait_for_camera_settle_definition=${_real_patrol_wait_for_camera_settle_definition//_patrol_wait_for_camera_settle/_real_patrol_wait_for_camera_settle}
+eval "$_real_patrol_wait_for_camera_settle_definition"
+_patrol_wait_for_camera_settle() {
+  PATROL_SETTLE_CALLS=$(( PATROL_SETTLE_CALLS + 1 ))
+  _real_patrol_wait_for_camera_settle "$@"
+}
+
 PTZ_READS=()
 PTZ_QUEUE_FILE=""
 HOME_CAMERA_STATES=()
@@ -11,6 +20,7 @@ PATROL_MODE=""
 PATROL_DWELL=0
 PATROL_GOTO_COUNT=0
 PATROL_SLEEP_COUNT=0
+PATROL_FAKE_NOW=1000
 
 ptz_queue_prepare() {
   PTZ_QUEUE_FILE=$(mktemp)
@@ -34,7 +44,18 @@ api_get_ptz_position() {
 }
 
 api_post_with_retry() {
-  if [[ "$PATROL_MODE" == "failed-goto" ]]; then
+  if [[ "$PATROL_MODE" == settle-* ]]; then
+    if [[ "$PATROL_MODE" == "settle-once" ]]; then
+      PATROL_GOTO_COUNT=$(( PATROL_GOTO_COUNT + 1 ))
+      if (( PATROL_GOTO_COUNT >= 2 )); then
+        printf '__goto_advanced=1 settle_calls=%s now=%s\n' "$PATROL_SETTLE_CALLS" "$PATROL_FAKE_NOW" >&2
+        exit 0
+      fi
+    elif [[ "$1" == */goto/1 ]]; then
+      printf '__patrol_started=1 settle_calls=%s now=%s\n' "$PATROL_SETTLE_CALLS" "$PATROL_FAKE_NOW" >&2
+      exit 0
+    fi
+  elif [[ "$PATROL_MODE" == "failed-goto" ]]; then
     PATROL_GOTO_COUNT=$(( PATROL_GOTO_COUNT + 1 ))
     if [[ "$1" == */goto/1 ]] && (( PATROL_GOTO_COUNT >= 3 )); then
       printf '__goto_advanced=1 gotos=%s\n' "$PATROL_GOTO_COUNT" >&2
@@ -72,16 +93,31 @@ api_get_camera_state() {
 sleep() {
   if [[ -n "$PATROL_MODE" ]]; then
     PATROL_SLEEP_COUNT=$(( PATROL_SLEEP_COUNT + 1 ))
+    if [[ "$PATROL_MODE" == settle-* ]]; then
+      PATROL_FAKE_NOW=$(( PATROL_FAKE_NOW + ${1:-1} ))
+    fi
     if (( external_control_until > 0 )); then
       printf '__external_hold=1\n'
       exit 0
     fi
-    if (( PATROL_SLEEP_COUNT > 20 )); then
+    if [[ "$PATROL_MODE" != settle-* ]] && (( PATROL_SLEEP_COUNT > 20 )); then
+      printf '__probe_timeout=1\n'
+      exit 99
+    fi
+    if [[ "$PATROL_MODE" == settle-* ]] && (( PATROL_SLEEP_COUNT > 40 )); then
       printf '__probe_timeout=1\n'
       exit 99
     fi
   fi
   return 0
+}
+
+date() {
+  if [[ "$PATROL_MODE" == settle-* ]]; then
+    printf '%s\n' "$PATROL_FAKE_NOW"
+  else
+    command date "$@"
+  fi
 }
 
 api_ensure_auth() {
@@ -93,7 +129,7 @@ is_within_schedule() {
 }
 
 get_camera_config() {
-  printf '{"enabled":true,"dwell_seconds":%s,"motion_hold_seconds":60,"manual_control_hold_seconds":120,"ptz_settle_seconds":0,"preset_slots":[1,2]}' "$PATROL_DWELL"
+  printf '{"enabled":true,"dwell_seconds":%s,"motion_hold_seconds":60,"manual_control_hold_seconds":120,"ptz_settle_seconds":0}' "$PATROL_DWELL"
 }
 
 api_get_preset_positions() {
@@ -167,10 +203,13 @@ patrol_probe() {
   PATROL_DWELL=$dwell
   PATROL_GOTO_COUNT=0
   PATROL_SLEEP_COUNT=0
+  PATROL_FAKE_NOW=1000
+  PATROL_SETTLE_CALLS=0
   HOME_CAMERA_INDEX=0
   ptz_queue_prepare
 
-  patrol_camera cam-1 Overwatch
+  local discovery_json='{"id":"cam-1","name":"Overwatch","presets":[{"slot":1},{"slot":2}]}'
+  patrol_camera cam-1 Overwatch "$discovery_json"
   local rc=$?
   printf '\n__patrol_status=%s gotos=%s sleeps=%s\n' \
     "$rc" "$PATROL_GOTO_COUNT" "$PATROL_SLEEP_COUNT"
