@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.0.0](https://github.com/iceteaSA/unifi-ptz-better-patrol/compare/v1.0.0...v1.0.0) (2026-08-09)
+
+
+### Bug Fixes
+
+* bound drift confirmation attempts ([81dd38f](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/81dd38f2b951a0337cee166415dd422e11ed3681))
+* install install.sh so the boot hook can re-bootstrap ([df3765f](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/df3765f737510574c5ce1dcccde5d140f90228fc))
+* require drift to persist across polls ([e088356](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/e0883565c97bae5f1a5a02c5af103c04bf0f017b))
+* resample home baseline until position stabilizes ([f6ce34d](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/f6ce34d4b5987a864457e48b4997f3a709e68356))
+
 ## 1.0.0 (2026-08-09)
 
 
