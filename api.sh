@@ -44,8 +44,10 @@ api_cleanup() {
   rm -f "$_COOKIE_TEMP" "$_HEADERS_TEMP" "$_BODY_TEMP"
   local pids
   pids=$(jobs -p)
-  # shellcheck disable=SC2086  # Intentional word-split: $pids is space-separated PID list
-  [[ -n "$pids" ]] && kill $pids 2>/dev/null || true
+  if [[ -n "$pids" ]]; then
+    # shellcheck disable=SC2086  # Intentional word-split: $pids is space-separated PID list
+    kill $pids 2>/dev/null || true
+  fi
 }
 
 api_load_config() {
@@ -355,6 +357,7 @@ is_tracking() {
     (.state // "UNKNOWN"),
     (.isAutoTracking // .isPtzAutoTracking // .isTracking // false),
     (.isSmartDetected // false),
+    (if ([.smartDetectSettings.autoTrackingObjectTypes[]?] | length) > 0 then "1" else "0" end),
     (.isMotionDetected // false),
     (.lastMotion // 0)
   ] | @tsv' 2>/dev/null) || {
@@ -362,8 +365,8 @@ is_tracking() {
     return 0
   }
 
-  local response_id_present cam_state tracking smart_detected motion_detected last_motion
-  IFS=$'\t' read -r response_id_present cam_state tracking smart_detected motion_detected last_motion <<< "$fields"
+  local response_id_present cam_state tracking smart_detected tracking_capable motion_detected last_motion
+  IFS=$'\t' read -r response_id_present cam_state tracking smart_detected tracking_capable motion_detected last_motion <<< "$fields"
 
   # An absent id makes the response unusable even when jq supplied defaults.
   if [[ "$response_id_present" != "1" ]]; then
@@ -389,6 +392,9 @@ is_tracking() {
   # Real-time smart detection boolean (person/vehicle/animal detected now)
   if [[ "$smart_detected" == "true" ]]; then
     _LAST_SMART_ACTIVE=1
+    if [[ "$tracking_capable" == "1" ]]; then
+      _LAST_TRACKING_ACTIVE=1
+    fi
     return 0
   fi
 
