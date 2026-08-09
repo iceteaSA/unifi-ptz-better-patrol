@@ -21,9 +21,11 @@
 * preserve camera state fields when id is missing ([4e9d29d](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/4e9d29ddfb953bcf9e2733b0e96987d3b80a692c))
 * report prolonged unreadable camera holds ([96bbe43](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/96bbe43b2d5a8b7817f0e5311ba45a08958d4e7f))
 
-## [1.0.0] - 2026-08-09
+### Pre-existing functionality at 1.0.0
 
-Initial release of a Bash daemon for UniFi Protect PTZ cameras. It provides:
+The daemon had been running in production for five months before its first
+tagged release; the generated notes above cover only the changes made since
+conventional commits were adopted. Baseline features:
 
 - Motion-aware patrol with active dwell monitoring
 - Manual-control detection and auto-tracking compatibility
