@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.4](https://github.com/iceteaSA/unifi-ptz-better-patrol/compare/v1.0.3...v1.0.4) (2026-08-10)
+
+
+### Bug Fixes
+
+* classify off-target position as unacquired goto until the target is reached ([c2ef22d](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/c2ef22d31ad8919dacca1803269f7dfb394bb81c))
+
 ## [1.0.3](https://github.com/iceteaSA/unifi-ptz-better-patrol/compare/v1.0.2...v1.0.3) (2026-08-09)
 
 
