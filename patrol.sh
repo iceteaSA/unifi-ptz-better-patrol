@@ -11,9 +11,9 @@ source "$SCRIPT_DIR/discover.sh"
 
 # Detect if someone else is controlling the camera (not us).
 #
-# Strategy: compare the live PTZ position (pan/tilt/zoom in motor steps from
-# the /ptz/position endpoint) against the preset's expected position.  Any
-# axis drifting beyond a threshold while outside the settle window → external.
+# Strategy: after a successful goto, require two consecutive live positions at
+# the commanded target before drift can mean external control.  A position
+# away from an unacquired target is unresolved command execution, not drift.
 #
 # Arguments:
 #   $1  cam_id
@@ -23,9 +23,8 @@ source "$SCRIPT_DIR/discover.sh"
 #   $5  expected_pan   (steps, -1 = unknown)
 #   $6  expected_tilt  (steps, -1 = unknown)
 #   $7  expected_zoom  (steps, -1 = unknown)
-#   $8  previous_pan   (steps, -1 = unavailable)
-#   $9  previous_tilt  (steps, -1 = unavailable)
-#   $10 previous_zoom  (steps, -1 = unavailable)
+#   $8  acquisition_state  (acquiring|acquired|none)
+#   $9  acquisition_streak (consecutive samples at target)
 #
 # Returns 0 (true) if external control is detected.
 is_externally_controlled() {
@@ -36,11 +35,12 @@ is_externally_controlled() {
   local expected_pan=$5
   local expected_tilt=$6
   local expected_zoom=$7
-  local previous_pan=${8:--1}
-  local previous_tilt=${9:--1}
-  local previous_zoom=${10:--1}
+  local acquisition_state=${8:-none}
+  local acquisition_streak=${9:-0}
   _LAST_DRIFT_MAGNITUDE=0
   _LAST_GOTO_FAILED=0
+  _LAST_ACQUISITION_STATE=$acquisition_state
+  _LAST_ACQUISITION_STREAK=$acquisition_streak
 
   local now; now=$(date +%s)
 
@@ -71,49 +71,56 @@ is_externally_controlled() {
   local pan_diff=0 tilt_diff=0 zoom_diff=0
   local drift_magnitude=0
   local drifted=""
+  local target_axes=0
+  local at_target=1
 
   if (( expected_pan >= 0 )); then
+    target_axes=$(( target_axes + 1 ))
     pan_diff=$(( live_pan - expected_pan ))
     pan_diff=${pan_diff#-}
     (( pan_diff > drift_magnitude )) && drift_magnitude=$pan_diff
     (( pan_diff > pan_thresh )) && drifted+="pan(${expected_pan}→${live_pan}) "
+    (( pan_diff > pan_thresh )) && at_target=0
   fi
   if (( expected_tilt >= 0 )); then
+    target_axes=$(( target_axes + 1 ))
     tilt_diff=$(( live_tilt - expected_tilt ))
     tilt_diff=${tilt_diff#-}
     (( tilt_diff > drift_magnitude )) && drift_magnitude=$tilt_diff
     (( tilt_diff > tilt_thresh )) && drifted+="tilt(${expected_tilt}→${live_tilt}) "
+    (( tilt_diff > tilt_thresh )) && at_target=0
   fi
   if (( expected_zoom >= 0 )); then
+    target_axes=$(( target_axes + 1 ))
     zoom_diff=$(( live_zoom - expected_zoom ))
     zoom_diff=${zoom_diff#-}
     (( zoom_diff > drift_magnitude )) && drift_magnitude=$zoom_diff
     (( zoom_diff > zoom_thresh )) && drifted+="zoom(${expected_zoom}→${live_zoom}) "
+    (( zoom_diff > zoom_thresh )) && at_target=0
   fi
 
   _LAST_DRIFT_MAGNITUDE=$drift_magnitude
 
   log "$cam_name" "debug" "PTZ check: pan=${live_pan}/${expected_pan} tilt=${live_tilt}/${expected_tilt} zoom=${live_zoom}/${expected_zoom}"
 
-  if [[ -n "$drifted" ]]; then
-    # A live position matching the prior target means the accepted goto did
-    # not move the camera. Preset coordinates are unavailable during home
-    # dwell, so all three previous axes must be known before classifying this.
-    if (( previous_pan >= 0 && previous_tilt >= 0 && previous_zoom >= 0 )); then
-      local previous_pan_diff=$(( live_pan - previous_pan ))
-      local previous_tilt_diff=$(( live_tilt - previous_tilt ))
-      local previous_zoom_diff=$(( live_zoom - previous_zoom ))
-      previous_pan_diff=${previous_pan_diff#-}
-      previous_tilt_diff=${previous_tilt_diff#-}
-      previous_zoom_diff=${previous_zoom_diff#-}
-      if (( previous_pan_diff <= pan_thresh &&
-            previous_tilt_diff <= tilt_thresh &&
-            previous_zoom_diff <= zoom_thresh )); then
-        _LAST_GOTO_FAILED=1
-        log "$cam_name" "warn" "Goto did not take effect — live position matches previous commanded preset"
-        return 1
+  if [[ "$acquisition_state" == "acquiring" ]]; then
+    if (( target_axes > 0 && at_target == 1 )); then
+      acquisition_streak=$(( acquisition_streak + 1 ))
+      if (( acquisition_streak >= 2 )); then
+        acquisition_state="acquired"
+        log "$cam_name" "debug" "Goto target acquired after ${acquisition_streak} consecutive position reads"
       fi
+    else
+      acquisition_streak=0
+      _LAST_GOTO_FAILED=1
+      log "$cam_name" "warn" "Goto target not acquired — live position remains off target"
     fi
+    _LAST_ACQUISITION_STATE=$acquisition_state
+    _LAST_ACQUISITION_STREAK=$acquisition_streak
+    return 1
+  fi
+
+  if [[ -n "$drifted" ]]; then
     log "$cam_name" "info" "PTZ drift detected: ${drifted}"
     return 0
   fi
@@ -184,9 +191,9 @@ _patrol_wait_for_camera_settle() {
   done
 }
 
-# Re-issue a goto that was accepted while the camera stayed at the previous
-# preset. The retry count is caller-scoped so the patrol can advance after the
-# bounded limit instead of entering a hold loop.
+# Re-issue a goto whose target has not been acquired. The retry count is
+# caller-scoped so the patrol can advance after the bounded limit instead of
+# entering a hold loop.
 _patrol_reissue_failed_goto() {
   local cam_id=$1
   local cam_name=$2
@@ -196,9 +203,9 @@ _patrol_reissue_failed_goto() {
   if (( goto_retry_count >= retry_limit )); then
     log "$cam_name" "warn" "Goto slot $slot still has not taken effect after ${retry_limit} retries — advancing patrol"
     expected_pan=-1; expected_tilt=-1; expected_zoom=-1
-    previous_pan=-1; previous_tilt=-1; previous_zoom=-1
-    expected_is_preset=0
     last_commanded_slot=-1
+    acquisition_state="none"
+    acquisition_streak=0
     goto_retry_count=0
     return 1
   fi
@@ -210,6 +217,8 @@ _patrol_reissue_failed_goto() {
   case "$code" in
     200|204)
       last_goto_ts=$(date +%s)
+      acquisition_state="acquiring"
+      acquisition_streak=0
       log "$cam_name" "warn" "Re-issued goto for slot $slot after failed execution (attempt ${goto_retry_count}/${retry_limit}, HTTP $code)"
       ;;
     *)
@@ -325,7 +334,7 @@ set_auto_tracking() {
 # Reads/writes these caller-scope variables directly (not local to this
 # function, shared via bash dynamic scoping):
 #   last_goto_ts expected_pan expected_tilt expected_zoom
-#   previous_pan previous_tilt previous_zoom expected_is_preset
+#   acquisition_state acquisition_streak
 #   tracking_enabled external_control_until
 #
 # Returns 0 if dwell completed normally, 1 if interrupted (caller should
@@ -347,9 +356,9 @@ _patrol_home_dwell() {
   last_goto_ts=$(date +%s)
   # Home position has no preset data — establish a stable live baseline after settle.
   expected_pan=-1; expected_tilt=-1; expected_zoom=-1
-  previous_pan=-1; previous_tilt=-1; previous_zoom=-1
-  expected_is_preset=0
   last_commanded_slot=-1
+  acquisition_state="acquiring"
+  acquisition_streak=0
   goto_retry_count=0
   local home_sampled=0
   local home_sample_valid=0
@@ -409,6 +418,9 @@ _patrol_home_dwell() {
             expected_zoom=$sample_zoom
             home_sampled=1
             home_baseline_ready=1
+            # The baseline is acquired by observation, not by a goto target.
+            acquisition_state="acquired"
+            acquisition_streak=2
             log "$cam_name" "debug" "Home baseline accepted after stable position reads"
           fi
         fi
@@ -427,6 +439,11 @@ _patrol_home_dwell() {
     if is_tracking "$cam_id" "$motion_hold" "$last_goto_ts" "$settle_seconds" "$cam_state"; then
       activity_active=1
     fi
+    if (( _LAST_TRACKING_ACTIVE == 1 )); then
+      expected_pan=-1; expected_tilt=-1; expected_zoom=-1
+      acquisition_state="acquiring"
+      acquisition_streak=0
+    fi
     if (( _LAST_ACTIVITY_KNOWN == 1 )); then
       home_activity_checked=1
       home_unknown_seconds=0
@@ -441,11 +458,18 @@ _patrol_home_dwell() {
     # Check for external control (pan/tilt/zoom drift).
     # Skip when live auto-tracking is enabled — the camera may have moved to track.
     if (( home_sampled == 1 && home_baseline_ready == 0 && _LAST_TRACKING_ACTIVE == 0 )); then
-      if is_externally_controlled "$cam_id" "$cam_name" "$settle_seconds" "$last_goto_ts" "$expected_pan" "$expected_tilt" "$expected_zoom" "$previous_pan" "$previous_tilt" "$previous_zoom"; then
+      local external_controlled=0
+      is_externally_controlled "$cam_id" "$cam_name" "$settle_seconds" "$last_goto_ts" "$expected_pan" "$expected_tilt" "$expected_zoom" "$acquisition_state" "$acquisition_streak"
+      external_controlled=$?
+      acquisition_state="$_LAST_ACQUISITION_STATE"
+      acquisition_streak=$_LAST_ACQUISITION_STREAK
+      if (( external_controlled == 0 )); then
         # Retain at least 75% of the previous drift. A ratio handles pan/tilt
         # and zoom's different motor-step scales while rejecting convergence.
         if (( home_drift_streak > 0 && _LAST_DRIFT_MAGNITUDE * 4 >= home_previous_drift * 3 )); then
           external_control_until=$(( $(date +%s) + manual_hold ))
+          acquisition_state="acquiring"
+          acquisition_streak=0
           log "$cam_name" "info" "External control detected during home dwell — holding patrol for ${manual_hold}s"
           home_drift_attempts=0
           home_drift_streak=0
@@ -621,11 +645,9 @@ patrol_camera() {
   local expected_pan=-1
   local expected_tilt=-1
   local expected_zoom=-1
-  local previous_pan=-1
-  local previous_tilt=-1
-  local previous_zoom=-1
-  local expected_is_preset=0
   local last_commanded_slot=-1
+  local acquisition_state="none"
+  local acquisition_streak=0
   local goto_retry_count=0
   local goto_retry_limit=2
   local external_control_until=0
@@ -667,6 +689,9 @@ patrol_camera() {
           tracking_enabled=0
         fi
         schedule_paused=1
+        expected_pan=-1; expected_tilt=-1; expected_zoom=-1
+        acquisition_state="acquiring"
+        acquisition_streak=0
       fi
       sleep 60
       continue
@@ -675,6 +700,8 @@ patrol_camera() {
       log "$cam_name" "info" "Schedule window active (${sched_start}-${sched_end}) — resuming patrol"
       schedule_paused=0
       expected_pan=-1; expected_tilt=-1; expected_zoom=-1
+      acquisition_state="acquiring"
+      acquisition_streak=0
       # Re-enable auto-tracking after schedule pause
       if [[ "$dyn_tracking" == "true" ]] && (( tracking_enabled == 0 )); then
         if set_auto_tracking "$cam_id" "$cam_name" '["person"]' "enabled"; then
@@ -704,6 +731,8 @@ patrol_camera() {
       # Hold just expired — reset expected position so we don't immediately
       # re-trigger drift detection against the stale pre-hold values
       expected_pan=-1; expected_tilt=-1; expected_zoom=-1
+      acquisition_state="acquiring"
+      acquisition_streak=0
       external_control_until=0
       top_drift_attempts=0
       top_drift_streak=0
@@ -735,14 +764,26 @@ patrol_camera() {
     if is_tracking "$cam_id" "$motion_hold" "$last_goto_ts" "$settle_seconds" "$top_state"; then
       activity_active=1
     fi
+    if (( _LAST_TRACKING_ACTIVE == 1 )); then
+      expected_pan=-1; expected_tilt=-1; expected_zoom=-1
+      acquisition_state="acquiring"
+      acquisition_streak=0
+    fi
     if (( _LAST_ACTIVITY_KNOWN == 1 )); then
       unknown_hold_seconds=0
     fi
 
     if (( _LAST_TRACKING_ACTIVE == 0 )); then
-      if is_externally_controlled "$cam_id" "$cam_name" "$settle_seconds" "$last_goto_ts" "$expected_pan" "$expected_tilt" "$expected_zoom" "$previous_pan" "$previous_tilt" "$previous_zoom"; then
+      local external_controlled=0
+      is_externally_controlled "$cam_id" "$cam_name" "$settle_seconds" "$last_goto_ts" "$expected_pan" "$expected_tilt" "$expected_zoom" "$acquisition_state" "$acquisition_streak"
+      external_controlled=$?
+      acquisition_state="$_LAST_ACQUISITION_STATE"
+      acquisition_streak=$_LAST_ACQUISITION_STREAK
+      if (( external_controlled == 0 )); then
         if (( top_drift_streak > 0 && _LAST_DRIFT_MAGNITUDE * 4 >= top_previous_drift * 3 )); then
           external_control_until=$(( $(date +%s) + manual_hold ))
+          acquisition_state="acquiring"
+          acquisition_streak=0
           log "$cam_name" "info" "External control detected — holding patrol for ${manual_hold}s"
           top_drift_attempts=0
           top_drift_streak=0
@@ -825,6 +866,8 @@ patrol_camera() {
     # expected position and advance to next preset (don't snap back).
     if [[ "$dyn_tracking" == "true" ]] && (( tracking_enabled == 1 && waited > 0 )); then
       expected_pan=-1; expected_tilt=-1; expected_zoom=-1
+      acquisition_state="acquiring"
+      acquisition_streak=0
       # Advance to next preset — tracking served as the dwell for this one,
       # so don't snap back to the same position the camera just tracked away from
       idx=$(( (idx + 1) % ${#presets[@]} ))
@@ -853,23 +896,15 @@ patrol_camera() {
     case "$code" in
       200|204)
         last_goto_ts=$(date +%s)
+        acquisition_state="acquiring"
+        acquisition_streak=0
         top_drift_attempts=0
         top_drift_streak=0
         top_previous_drift=0
-        # Preserve the prior preset before replacing the current expectation.
-        # Home baselines are explicitly excluded from failed-goto matching.
-        if (( expected_is_preset == 1 )); then
-          previous_pan=$expected_pan
-          previous_tilt=$expected_tilt
-          previous_zoom=$expected_zoom
-        else
-          previous_pan=-1; previous_tilt=-1; previous_zoom=-1
-        fi
         # Set expected position from preset data.  is_externally_controlled()
         # compares these against the live /ptz/position (motor steps), so the
         # coordinate system matches directly — no ISP zoom scaling needed.
         IFS=$'\t' read -r expected_pan expected_tilt expected_zoom <<< "$(get_preset_ptz "$preset_positions" "$slot")"
-        expected_is_preset=1
         last_commanded_slot=$slot
         goto_retry_count=0
         log "$cam_name" "info" "→ Slot $slot [HTTP $code]"
@@ -925,6 +960,11 @@ patrol_camera() {
       if is_tracking "$cam_id" "$motion_hold" "$last_goto_ts" "$settle_seconds" "$cam_state"; then
         activity_active=1
       fi
+      if (( _LAST_TRACKING_ACTIVE == 1 )); then
+        expected_pan=-1; expected_tilt=-1; expected_zoom=-1
+        acquisition_state="acquiring"
+        acquisition_streak=0
+      fi
       if (( _LAST_ACTIVITY_KNOWN == 1 )); then
         dwell_activity_checked=1
         dwell_unknown_seconds=0
@@ -940,9 +980,16 @@ patrol_camera() {
       # Skip when live auto-tracking is enabled — the camera may have moved to track a
       # target, which is not external control.
       if (( _LAST_TRACKING_ACTIVE == 0 )); then
-        if is_externally_controlled "$cam_id" "$cam_name" "$settle_seconds" "$last_goto_ts" "$expected_pan" "$expected_tilt" "$expected_zoom" "$previous_pan" "$previous_tilt" "$previous_zoom"; then
+        local external_controlled=0
+        is_externally_controlled "$cam_id" "$cam_name" "$settle_seconds" "$last_goto_ts" "$expected_pan" "$expected_tilt" "$expected_zoom" "$acquisition_state" "$acquisition_streak"
+        external_controlled=$?
+        acquisition_state="$_LAST_ACQUISITION_STATE"
+        acquisition_streak=$_LAST_ACQUISITION_STREAK
+        if (( external_controlled == 0 )); then
           if (( dwell_drift_streak > 0 && _LAST_DRIFT_MAGNITUDE * 4 >= dwell_previous_drift * 3 )); then
             external_control_until=$(( $(date +%s) + manual_hold ))
+            acquisition_state="acquiring"
+            acquisition_streak=0
             log "$cam_name" "info" "External control detected — holding patrol for ${manual_hold}s"
             dwell_drift_attempts=0
             dwell_drift_streak=0
