@@ -142,18 +142,19 @@ api_get_preset_positions() {
 
 external_probe() {
   local position=$1 expected_pan=$2 expected_tilt=$3 expected_zoom=$4
-  local previous_pan=${5:--1} previous_tilt=${6:--1} previous_zoom=${7:--1}
+  local acquisition_state=${5:-none} acquisition_streak=${6:-0}
   PTZ_READS=("$position")
   ptz_queue_prepare
 
   is_externally_controlled cam-1 Overwatch 0 0 \
     "$expected_pan" "$expected_tilt" "$expected_zoom" \
-    "$previous_pan" "$previous_tilt" "$previous_zoom"
+    "$acquisition_state" "$acquisition_streak"
   local rc=$?
   local reads
   reads=$(ptz_reads_consumed)
-  printf '\n__external_status=%s magnitude=%s reads=%s goto_failed=%s\n' \
-    "$rc" "$_LAST_DRIFT_MAGNITUDE" "$reads" "$_LAST_GOTO_FAILED"
+  printf '\n__external_status=%s magnitude=%s reads=%s goto_failed=%s acquisition=%s/%s\n' \
+    "$rc" "$_LAST_DRIFT_MAGNITUDE" "$reads" "$_LAST_GOTO_FAILED" \
+    "$_LAST_ACQUISITION_STATE" "$_LAST_ACQUISITION_STREAK"
   rm -f "$PTZ_QUEUE_FILE" "${PTZ_QUEUE_FILE}.next"
   return "$rc"
 }
@@ -165,10 +166,10 @@ goto_failure_reset_probe() {
   )
   ptz_queue_prepare
 
-  is_externally_controlled cam-1 Overwatch 0 0 11600 10400 97 7100 10400 97
+  is_externally_controlled cam-1 Overwatch 0 0 11600 10400 97 acquiring 0
   local first_rc=$?
   local first_failed=$_LAST_GOTO_FAILED
-  is_externally_controlled cam-1 Overwatch 0 0 11600 10400 97 7100 10400 97
+  is_externally_controlled cam-1 Overwatch 0 0 11600 10400 97 acquired 2
   local second_rc=$?
   local second_failed=$_LAST_GOTO_FAILED
   local reads
@@ -184,6 +185,7 @@ home_probe() {
   local last_goto_ts=0
   local expected_pan=-1 expected_tilt=-1 expected_zoom=-1
   local tracking_enabled=0 external_control_until=0
+  local acquisition_state=none acquisition_streak=0
   HOME_CAMERA_INDEX=0
   ptz_queue_prepare
 
@@ -191,8 +193,9 @@ home_probe() {
   local rc=$?
   local reads
   reads=$(ptz_reads_consumed)
-  printf '\n__home_status=%s ptz_reads=%s expected=%s/%s/%s\n' \
-    "$rc" "$reads" "$expected_pan" "$expected_tilt" "$expected_zoom"
+  printf '\n__home_status=%s ptz_reads=%s expected=%s/%s/%s acquisition=%s/%s\n' \
+    "$rc" "$reads" "$expected_pan" "$expected_tilt" "$expected_zoom" \
+    "$acquisition_state" "$acquisition_streak"
   rm -f "$PTZ_QUEUE_FILE" "${PTZ_QUEUE_FILE}.next"
   return "$rc"
 }

@@ -9,8 +9,8 @@ setup() {
   PATROL_MODE=""
 }
 
-@test "position at previous preset is a failed goto, not external control" {
-  run external_probe $'7200\t10400\t97' 11600 10400 97 7100 10400 97
+@test "off-target acquiring position is a failed goto, not external control" {
+  run external_probe $'7200\t10400\t97' 11600 10400 97 acquiring 0
 
   [ "$status" -eq 1 ]
   assert_contains "$output" "__external_status=1"
@@ -27,32 +27,35 @@ setup() {
   assert_contains "$output" "PTZ drift detected"
 }
 
-@test "previous match requires the zoom axis too" {
-  run external_probe $'7200\t10400\t200' 11600 10400 97 7100 10400 97
+@test "acquiring target sample advances the acquisition streak" {
+  run external_probe $'11600\t10400\t97' 11600 10400 97 acquiring 1
+
+  [ "$status" -eq 1 ]
+  assert_contains "$output" "__external_status=1"
+  assert_contains "$output" "goto_failed=0"
+  assert_contains "$output" "acquisition=acquired/2"
+}
+
+@test "acquired departure remains external control" {
+  run external_probe $'19000\t10400\t97' 11600 10400 97 acquired 2
 
   [ "$status" -eq 0 ]
   assert_contains "$output" "__external_status=0"
   assert_contains "$output" "goto_failed=0"
+  assert_contains "$output" "PTZ drift detected"
 }
 
-@test "previous match requires the tilt axis too" {
-  run external_probe $'7200\t11000\t97' 11600 10400 97 7100 10400 97
+@test "partial goto at 8800 is not external control" {
+  run external_probe $'8800\t10400\t97' 11600 10400 97 acquiring 0
 
-  [ "$status" -eq 0 ]
-  assert_contains "$output" "__external_status=0"
-  assert_contains "$output" "goto_failed=0"
+  [ "$status" -eq 1 ]
+  assert_contains "$output" "__external_status=1"
+  assert_contains "$output" "goto_failed=1"
+  assert_not_contains "$output" "PTZ drift detected"
 }
 
-@test "previous match requires the pan axis too" {
-  run external_probe $'7500\t10400\t97' 11600 10400 97 7100 10400 97
-
-  [ "$status" -eq 0 ]
-  assert_contains "$output" "__external_status=0"
-  assert_contains "$output" "goto_failed=0"
-}
-
-@test "unknown previous coordinates cannot classify a failed goto" {
-  run external_probe $'7200\t10400\t97' 11600 10400 97
+@test "uncommanded drift remains external control" {
+  run external_probe $'7200\t10400\t97' 11600 10400 97 none 0
 
   [ "$status" -eq 0 ]
   assert_contains "$output" "__external_status=0"
@@ -60,7 +63,7 @@ setup() {
 }
 
 @test "failed position read produces neither hold nor failed-goto flag" {
-  run external_probe "" 11600 10400 97 7100 10400 97
+  run external_probe "" 11600 10400 97 acquiring 0
 
   [ "$status" -eq 1 ]
   assert_contains "$output" "__external_status=1"
@@ -68,7 +71,7 @@ setup() {
 }
 
 @test "malformed position response produces neither hold nor failed-goto flag" {
-  run external_probe malformed 11600 10400 97 7100 10400 97
+  run external_probe malformed 11600 10400 97 acquiring 0
 
   [ "$status" -eq 1 ]
   assert_contains "$output" "__external_status=1"

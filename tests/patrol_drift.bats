@@ -176,7 +176,7 @@ setup() {
   run home_probe 3
 
   [ "$status" -eq 1 ]
-  assert_contains "$output" "__home_status=1 ptz_reads=2 expected=11600/10400/100"
+  assert_contains "$output" "__home_status=1 ptz_reads=2 expected=-1/-1/-1"
   assert_contains "$output" "Invalid camera state response — assuming active (fail-safe)"
   assert_not_contains "$output" "External control detected"
 }
@@ -205,7 +205,7 @@ setup() {
   run home_probe 3
 
   [ "$status" -eq 0 ]
-  assert_contains "$output" "__home_status=0 ptz_reads=3 expected=11650/10450/110"
+  assert_contains "$output" "__home_status=0 ptz_reads=3 expected=11650/10450/110 acquisition=acquired/2"
   assert_contains "$output" "Home baseline accepted after stable position reads"
 }
 
@@ -231,11 +231,12 @@ setup() {
     $'11600\t10400\t100'
     $'11600\t10400\t100'
     $'11600\t10400\t100'
+    $'11600\t10400\t100'
     $'8700\t10400\t100'
     $'10200\t10400\t100'
   )
 
-  run patrol_probe 1 top
+  run patrol_probe 4 top
 
   [ "$status" -eq 0 ]
   assert_contains "$output" "__goto_advanced=1"
@@ -247,11 +248,12 @@ setup() {
     $'11600\t10400\t100'
     $'11600\t10400\t100'
     $'11600\t10400\t100'
+    $'11600\t10400\t100'
     $'8700\t10400\t100'
     $'8700\t10400\t100'
   )
 
-  run patrol_probe 1 top
+  run patrol_probe 4 top
 
   [ "$status" -eq 0 ]
   assert_contains "$output" "__external_hold=1"
@@ -262,11 +264,13 @@ setup() {
   PTZ_READS=(
     $'11600\t10400\t100'
     $'11600\t10400\t100'
+    $'11600\t10400\t100'
+    $'11600\t10400\t100'
     $'8700\t10400\t100'
     $'10200\t10400\t100'
   )
 
-  run patrol_probe 4 dwell
+  run patrol_probe 8 dwell
 
   [ "$status" -eq 0 ]
   assert_contains "$output" "__goto_advanced=1"
@@ -277,11 +281,13 @@ setup() {
   PTZ_READS=(
     $'11600\t10400\t100'
     $'11600\t10400\t100'
+    $'11600\t10400\t100'
+    $'11600\t10400\t100'
     $'8700\t10400\t100'
     $'8700\t10400\t100'
   )
 
-  run patrol_probe 4 dwell
+  run patrol_probe 8 dwell
 
   [ "$status" -eq 0 ]
   assert_contains "$output" "__external_hold=1"

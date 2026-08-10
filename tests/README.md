@@ -25,6 +25,12 @@ The missing-field test is a characterization test for a known source defect:
 `.id // empty` once collapsed the positional jq `@tsv` output when `id` was
 absent. It now asserts the corrected invalid-response fail-safe.
 
+`failed_goto.bats` and `patrol_drift.bats` exercise the acquisition gate:
+off-target samples while acquiring are treated as failed gotos, two target
+samples enable external-control detection, and unreadable samples remain
+fail-safe without consuming retries. Patrol probes pass discovery JSON in the
+same shape as `launch_patrol_for_camera`.
+
 ## Hardware fixture
 
 `fixtures/camera-0.json` is derived from a live UNVR camera response. The
