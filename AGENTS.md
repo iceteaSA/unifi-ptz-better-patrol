@@ -8,10 +8,10 @@ the style guide and architecture — keep this file in sync when either changes.
 
 ## Verification
 
-There is **no test suite**. The only automated gate is shellcheck, and it currently passes clean:
+Run ShellCheck, the Bats suite under tests/, tests/cloud-auth.sh and python3 tests/test_setup.py.
 
 ```bash
-shellcheck -s bash api.sh discover.sh patrol.sh ptz-patrol.sh install.sh uninstall.sh
+shellcheck -s bash api.sh discover.sh patrol.sh ptz-patrol.sh install.sh setup.sh bootstrap.sh uninstall.sh
 ```
 
 Keep it at zero warnings — the PR template has a checkbox for it.
@@ -162,3 +162,5 @@ logs. `config.json.example` is the schema and gets copied to `config.json` on in
   camera model, Protect version) — say so explicitly when a change was not hardware-tested.
 - Update `README.md` when behavior changes; it documents the patrol loop, detection
   hierarchy and log samples in detail and drifts easily.
+
+Cloud mode uses the Site Manager connector and private Protect API. setup.sh supports both local credentials and cloud keys. bootstrap.sh stages repository files; install.sh handles local installation. Firmware bootstrap requires a separately functioning on_boot.d runner. Never promise firmware survival without testing.

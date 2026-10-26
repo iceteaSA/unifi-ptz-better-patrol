@@ -103,7 +103,7 @@ for (( i = 0; i < count; i++ )); do
   cam_id=$(echo "$cameras" | jq -r ".[$i].id")
   cam_name=$(echo "$cameras" | jq -r ".[$i].name")
   cam_config=$(get_camera_config "$cam_id")
-  enabled=$(echo "$cam_config" | jq -r '.enabled // true')
+  enabled=$(echo "$cam_config" | jq -r 'if .enabled == null then true else .enabled end')
 
   echo ""
   echo "  $cam_name ($cam_id)"

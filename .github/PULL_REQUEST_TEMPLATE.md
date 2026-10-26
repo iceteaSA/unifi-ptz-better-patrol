@@ -41,7 +41,7 @@ Detailed list of changes:
 - [ ] Error recovery (auth failures, API errors)
 - [ ] Startup (discovery, auto-setup)
 - [ ] Shutdown (graceful cleanup)
-- [ ] Shellcheck passes: `shellcheck -s bash api.sh discover.sh patrol.sh ptz-patrol.sh install.sh uninstall.sh`
+- [ ] Shellcheck passes: `shellcheck -s bash api.sh discover.sh patrol.sh ptz-patrol.sh install.sh setup.sh bootstrap.sh uninstall.sh`
 - [ ] Other:
 
 ### Test Results

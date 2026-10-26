@@ -1,3 +1,7 @@
 /.idea/
 config.json
 tests/.bats/
+
+config.json.*
+__pycache__/
+*.zip

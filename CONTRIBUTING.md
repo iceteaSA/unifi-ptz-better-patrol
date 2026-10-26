@@ -42,7 +42,7 @@ Enhancement suggestions are tracked as GitHub issues. When creating an enhanceme
    - Prefix functions with their module name (`api_*`, `patrol_*`, etc.)
 3. **Lint your changes**:
    ```bash
-   shellcheck -s bash api.sh discover.sh patrol.sh ptz-patrol.sh install.sh uninstall.sh
+   shellcheck -s bash api.sh discover.sh patrol.sh ptz-patrol.sh install.sh setup.sh bootstrap.sh uninstall.sh
    ```
 4. **Test your changes**:
    - Test on actual hardware if possible
