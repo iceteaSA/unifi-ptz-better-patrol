@@ -1,15 +1,6 @@
 #!/bin/bash
 set -e
-
-# Repository information
-REPO_OWNER="iceteaSA"
-REPO_NAME="unifi-ptz-better-patrol"
-BRANCH="${PTZ_PATROL_BRANCH:-main}"
-BASE_URL="https://raw.githubusercontent.com/$REPO_OWNER/$REPO_NAME/$BRANCH"
-
-if [[ "$BRANCH" != "main" ]]; then
-    echo "WARNING: Installing unverified code from branch '$BRANCH' fetched directly from GitHub."
-fi
+umask 077
 
 # Check for root privileges
 if [ "$(id -u)" -ne 0 ]; then
@@ -34,53 +25,15 @@ SERVICE_NAME="ptz-patrol"
 ONBOOT_DIR="/data/on_boot.d"
 ONBOOT_SCRIPT="$ONBOOT_DIR/10-ptz-patrol.sh"
 
-# --- Parse optional arguments ---
-ARG_NVR=""
-ARG_USER=""
-ARG_PASS=""
+case "${1:-}" in
+    ""|--bootstrap) ;;
+    *) echo 'Usage: bash install.sh [--bootstrap]'; exit 1 ;;
+esac
 
-while [[ $# -gt 0 ]]; do
-    case "$1" in
-        --bootstrap) break ;;  # handled separately below
-        --nvr)       ARG_NVR="$2"; shift 2 ;;
-        --username)  ARG_USER="$2"; shift 2 ;;
-        --password)  ARG_PASS="$2"; shift 2 ;;
-        --help|-h)
-            echo "Usage: install.sh [OPTIONS]"
-            echo ""
-            echo "Options:"
-            echo "  --nvr ADDRESS      NVR address (e.g. https://10.0.0.1)"
-            echo "  --username USER    Local admin username"
-            echo "  --password PASS    Local admin password"
-            echo "  --bootstrap        Re-install deps/service after firmware update"
-            echo "  --help             Show this help"
-            echo ""
-            echo "Environment:"
-            echo "  PTZ_PATROL_BRANCH  Install from a specific branch (default: main)"
-            echo ""
-            echo "Examples:"
-            echo "  sudo bash install.sh --nvr https://10.0.0.1 --username patrol --password secret"
-            echo "  PTZ_PATROL_BRANCH=dev sudo bash install.sh"
-            exit 0
-            ;;
-        *)
-            echo "Unknown option: $1 (use --help for usage)"
-            exit 1
-            ;;
-    esac
-done
-
-echo "Installing from branch: $BRANCH"
+echo "Installing bundled cloud adaptation"
 
 # Script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# An installed copy must refresh from the repository on update; otherwise its
-# local-file preference turns every destination into a successful no-op.
-INSTALLER_IS_INSTALLED=false
-if [ "$(realpath "$SCRIPT_DIR")" = "$(realpath "$INSTALL_DIR")" ]; then
-    INSTALLER_IS_INSTALLED=true
-fi
 
 # Create install directory
 mkdir -p "$INSTALL_DIR" || {
@@ -114,19 +67,13 @@ get_file() {
     local filename="$1"
     local destination="$2"
 
-    # A checkout is an offline-capable source; the installed copy is not.
-    if [ "$INSTALLER_IS_INSTALLED" = false ] && [ -f "$SCRIPT_DIR/$filename" ]; then
-        echo "Using local file: $filename"
+    # Never download upstream files over this adapted build.
+    if [[ ! -f "$SCRIPT_DIR/$filename" ]]; then
+        echo "Missing bundled file: $filename"
+        exit 1
+    fi
+    if [[ "$(realpath "$SCRIPT_DIR/$filename")" != "$(realpath -m "$destination")" ]]; then
         cp "$SCRIPT_DIR/$filename" "$destination"
-    else
-        echo "Downloading $filename from repository..."
-        local temp_destination="${destination}.tmp.$$"
-        if ! curl -fsSL "$BASE_URL/$filename" -o "$temp_destination"; then
-            rm -f "$temp_destination"
-            echo "Error: Failed to download $filename"
-            exit 1
-        fi
-        mv "$temp_destination" "$destination"
     fi
 }
 
@@ -145,8 +92,17 @@ fi
 echo "=== PTZ Patrol Installer ==="
 install_deps
 
+# Configure and validate before replacing installed runtime files.
+if [[ "$SCRIPT_DIR" != "$INSTALL_DIR" && -f "$INSTALL_DIR/config.json" ]]; then
+    cp -p "$INSTALL_DIR/config.json" "$SCRIPT_DIR/config.json"
+fi
+bash "$SCRIPT_DIR/setup.sh"
+if systemctl is-active --quiet "$SERVICE_NAME.service"; then
+    systemctl stop "$SERVICE_NAME.service"
+fi
+
 # Install script files
-for f in install.sh api.sh discover.sh patrol.sh ptz-patrol.sh; do
+for f in install.sh setup.sh config.json.example ptz-patrol.service api.sh discover.sh patrol.sh ptz-patrol.sh; do
     get_file "$f" "$INSTALL_DIR/$f"
     chmod +x "$INSTALL_DIR/$f"
 done
@@ -155,43 +111,7 @@ done
 get_file "uninstall.sh" "$INSTALL_DIR/uninstall.sh"
 chmod +x "$INSTALL_DIR/uninstall.sh"
 
-# Install config
-if [ ! -f "$INSTALL_DIR/config.json" ]; then
-    get_file "config.json.example" "$INSTALL_DIR/config.json"
-    if [ -z "$ARG_NVR" ] && [ -z "$ARG_USER" ] && [ -z "$ARG_PASS" ]; then
-        echo "Config created — edit $INSTALL_DIR/config.json with your credentials"
-    fi
-else
-    echo "Config already exists, not overwriting"
-fi
-
-# Apply credential args (works on both new and existing configs)
-if [ -n "$ARG_NVR" ] || [ -n "$ARG_USER" ] || [ -n "$ARG_PASS" ]; then
-    if ! command -v jq &>/dev/null; then
-        echo "Error: jq is required to set config values"
-        exit 1
-    fi
-    local_cfg="$INSTALL_DIR/config.json"
-    tmp_cfg="$INSTALL_DIR/config.json.tmp"
-    cp "$local_cfg" "$tmp_cfg"
-    if ! jq . "$tmp_cfg" >/dev/null 2>&1; then
-        echo "Error: $local_cfg is not valid JSON — cannot apply credential flags"
-        rm -f "$tmp_cfg"
-        exit 1
-    fi
-    if [ -n "$ARG_NVR" ]; then
-        jq --arg v "$ARG_NVR" '.nvr_address = $v' "$tmp_cfg" > "$tmp_cfg.out" && mv "$tmp_cfg.out" "$tmp_cfg"
-    fi
-    if [ -n "$ARG_USER" ]; then
-        jq --arg v "$ARG_USER" '.username = $v' "$tmp_cfg" > "$tmp_cfg.out" && mv "$tmp_cfg.out" "$tmp_cfg"
-    fi
-    if [ -n "$ARG_PASS" ]; then
-        jq --arg v "$ARG_PASS" '.password = $v' "$tmp_cfg" > "$tmp_cfg.out" && mv "$tmp_cfg.out" "$tmp_cfg"
-    fi
-    mv "$tmp_cfg" "$local_cfg"
-    echo "Config updated with provided credentials"
-fi
-
+get_file "config.json" "$INSTALL_DIR/config.json"
 # Install systemd service
 SERVICE_FILE="/etc/systemd/system/$SERVICE_NAME.service"
 get_file "ptz-patrol.service" "$SERVICE_FILE"
@@ -209,38 +129,20 @@ systemctl daemon-reload || {
     exit 1
 }
 
-# Install on_boot.d hook for firmware update survival
-mkdir -p "$ONBOOT_DIR"
-cat > "$ONBOOT_SCRIPT" <<'BOOT'
+chmod 600 "$INSTALL_DIR/config.json"
+echo 'Starting patrol changes camera tracking and return-home settings.'
+read -r -p 'Start patrol now and enable it at boot? [Y/n]: ' answer
+if [[ "$answer" != [nN] ]]; then
+    mkdir -p "$ONBOOT_DIR"
+    cat > "$ONBOOT_SCRIPT" <<'BOOT'
 #!/bin/bash
-# Re-bootstrap after firmware update wipes /etc and apt packages
-/data/ptz-patrol/install.sh --bootstrap
-systemctl restart ptz-patrol 2>/dev/null || true
+/data/ptz-patrol/install.sh --bootstrap && systemctl restart ptz-patrol
 BOOT
-chmod +x "$ONBOOT_SCRIPT"
-echo "on_boot.d hook installed"
-
-# Smart service management
-if systemctl is-active --quiet "$SERVICE_NAME.service"; then
-    echo "Service already running — performing hot update"
-    if ! systemctl restart "$SERVICE_NAME.service"; then
-        echo "Error: Failed to restart service"
-        echo "Check service status with: systemctl status $SERVICE_NAME.service"
-        exit 1
-    fi
-    echo "Service successfully updated and restarted"
+    chmod 700 "$ONBOOT_SCRIPT"
+    systemctl enable --now "$SERVICE_NAME.service"
+    systemctl --no-pager status "$SERVICE_NAME.service"
 else
-    echo "Performing fresh installation"
-    if ! systemctl enable --now "$SERVICE_NAME.service"; then
-        echo "Error: Failed to enable and start service"
-        echo "Check service status with: systemctl status $SERVICE_NAME.service"
-        exit 1
-    fi
-    echo "Service successfully enabled and started"
+    systemctl disable "$SERVICE_NAME.service" 2>/dev/null || true
+    rm -f "$ONBOOT_SCRIPT"
+    echo 'Installed, patrol stopped. Start later with systemctl enable --now ptz-patrol.service'
 fi
-
-echo ""
-echo "Installation successful!"
-echo "Configuration: nano $INSTALL_DIR/config.json"
-echo "Discovery:     bash $INSTALL_DIR/discover.sh"
-echo "Status check:  journalctl -u $SERVICE_NAME.service -f"

@@ -42,10 +42,15 @@ jobs:
           jq --version
 
       - name: Run shellcheck
-        run: shellcheck -s bash api.sh discover.sh patrol.sh ptz-patrol.sh install.sh uninstall.sh
+        run: shellcheck -s bash api.sh discover.sh patrol.sh ptz-patrol.sh install.sh setup.sh bootstrap.sh uninstall.sh
 
       - name: Install bats
         run: npm install --prefix tests/.bats bats@1.13.0 --no-audit --no-fund
 
       - name: Run bats tests
         run: tests/.bats/node_modules/.bin/bats tests/
+
+      - name: Cloud and setup tests
+        run: |
+          bash tests/cloud-auth.sh
+          python3 tests/test_setup.py

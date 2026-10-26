@@ -6,7 +6,6 @@
   "auto_discover": true,
   "rediscovery_interval_seconds": 600,
   "log_level": "info",
-
   "defaults": {
     "dwell_seconds": 30,
     "motion_hold_seconds": 15,
@@ -17,24 +16,10 @@
     "home_on_shutdown": false,
     "home_between_cycles": false,
     "schedule": null,
-    "dynamic_auto_tracking": false
+    "dynamic_auto_tracking": true
   },
-
-  "camera_overrides": {
-    "EXAMPLE_CAMERA_ID_HERE": {
-      "enabled": true,
-      "dwell_seconds": 45,
-      "motion_hold_seconds": 20,
-      "max_tracking_wait": 180,
-      "manual_control_hold_seconds": 60,
-      "preset_slots": [0, 1, 3],
-      "schedule": {
-        "start": "22:00",
-        "end": "06:00",
-        "days": ["mon", "tue", "wed", "thu", "fri"],
-        "home_on_pause": true
-      },
-      "dynamic_auto_tracking": true
-    }
-  }
+  "camera_overrides": {},
+  "auth_mode": "cloud",
+  "api_key": "REPLACE_WITH_SITE_MANAGER_API_KEY",
+  "console_id": "REPLACE_WITH_CONSOLE_ID"
 }

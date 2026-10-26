@@ -19,6 +19,10 @@ _CONSECUTIVE_FAILURES=0
 
 # --- Cached config (populated by api_load_config) ---
 _NVR_ADDRESS=""
+_AUTH_MODE="local"
+_API_KEY=""
+_CONSOLE_ID=""
+_KEY_HEADER_TEMP=""
 _REAUTH_SECONDS=3600
 _USERNAME=""
 _PASSWORD=""
@@ -41,7 +45,7 @@ api_init() {
 }
 
 api_cleanup() {
-  rm -f "$_COOKIE_TEMP" "$_HEADERS_TEMP" "$_BODY_TEMP"
+  rm -f "$_KEY_HEADER_TEMP" "$_COOKIE_TEMP" "$_HEADERS_TEMP" "$_BODY_TEMP"
   local pids
   pids=$(jobs -p)
   if [[ -n "$pids" ]]; then
@@ -59,6 +63,23 @@ api_load_config() {
   # Log level: error=0, warn=1, info=2 (default), debug=3
   local level_name; level_name=$(cfg '.log_level // "info"')
   _LOG_LEVEL=$(_log_level_num "$level_name")
+
+  _AUTH_MODE=$(cfg '.auth_mode // "local"')
+  if [[ "$_AUTH_MODE" == "cloud" ]]; then
+    _API_KEY=$(cfg '.api_key // empty')
+    _CONSOLE_ID=$(cfg '.console_id // empty')
+    if [[ ! "$_CONSOLE_ID" =~ ^[A-Za-z0-9_-]+$ || ! "$_API_KEY" =~ ^[A-Za-z0-9._-]+$ ]]; then
+      log "api" "error" "Invalid or missing cloud api_key/console_id" >&2
+      return 1
+    fi
+    _KEY_HEADER_TEMP=$(mktemp /tmp/ptz-patrol-key-XXXXXX)
+    printf 'X-API-Key: %s\n' "$_API_KEY" > "$_KEY_HEADER_TEMP"
+    _API_KEY=""
+    return 0
+  elif [[ "$_AUTH_MODE" != "local" ]]; then
+    log "api" "error" "auth_mode must be local or cloud" >&2
+    return 1
+  fi
 
   # Validate required fields (jq -r turns missing values into "null")
   if [[ -z "$_NVR_ADDRESS" || "$_NVR_ADDRESS" == "null" ]]; then
@@ -119,7 +140,7 @@ log() {
   local level_tag
   level_tag=$(echo "$level" | tr '[:lower:]' '[:upper:]')
 
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level_tag] [$tag] $msg"
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level_tag] [$tag] $msg" >&2
 }
 
 # ---------------------------------------------------------------------------
@@ -127,6 +148,15 @@ log() {
 # ---------------------------------------------------------------------------
 
 api_auth() {
+  if [[ "$_AUTH_MODE" == "cloud" ]]; then
+    api_get "/cameras"
+    if [[ "$_LAST_HTTP_CODE" != "200" ]] || ! jq -e 'type == "array"' <<< "$_LAST_BODY" >/dev/null 2>&1; then
+      log "api" "error" "Cloud camera access failed (HTTP $_LAST_HTTP_CODE); check organization, console ID and permissions" >&2
+      return 1
+    fi
+    _LAST_AUTH=$(date +%s)
+    return 0
+  fi
   local response
   response=$(curl -k --connect-timeout 3 --max-time 10 -D "$_HEADERS_TEMP" -c "$_COOKIE_TEMP" -s -X POST \
     -H "Content-Type: application/json" \
@@ -176,6 +206,12 @@ api_ensure_auth() {
 # Reuses a persistent temp file (_BODY_TEMP) for the response body — no
 # mktemp/rm per call, no leak risk if interrupted.
 api_get() {
+  if [[ "$_AUTH_MODE" == "cloud" ]]; then
+    _LAST_HTTP_CODE=$(_api_cloud_request GET "$1" -o "$_BODY_TEMP")
+    _LAST_HTTP_CODE="${_LAST_HTTP_CODE:-000}"
+    _LAST_BODY=$(<"$_BODY_TEMP")
+    return 0
+  fi
   # -o writes response body to file; -w prints HTTP code to stdout
   _LAST_HTTP_CODE=$(curl -k --connect-timeout 3 --max-time 10 -s -b "$_COOKIE_TEMP" \
     --header "TOKEN: $_TOKEN" \
@@ -188,6 +224,10 @@ api_get() {
 }
 
 api_post() {
+  if [[ "$_AUTH_MODE" == "cloud" ]]; then
+    _api_cloud_request POST "$1" -o /dev/null
+    return
+  fi
   curl -k --connect-timeout 3 --max-time 10 -s -o /dev/null -w "%{http_code}" -X POST \
     "$_NVR_ADDRESS/proxy/protect/api$1" \
     --header "TOKEN: $_TOKEN" \
@@ -197,6 +237,10 @@ api_post() {
 
 api_patch() {
   local url=$1 data=$2
+  if [[ "$_AUTH_MODE" == "cloud" ]]; then
+    _api_cloud_request PATCH "$url" -o /dev/null -H 'Content-Type: application/json' --data "$data"
+    return
+  fi
   curl -k --connect-timeout 3 --max-time 10 -s -o /dev/null -w "%{http_code}" -X PATCH \
     "$_NVR_ADDRESS/proxy/protect/api$url" \
     --header "TOKEN: $_TOKEN" \
@@ -478,3 +522,13 @@ get_preset_ptz() {
 }
 
 
+
+# Cloud connector authenticates the existing private API without a local user.
+# Key stays in a mode-0600 header file, outside curl's process arguments.
+_api_cloud_request() {
+  local method=$1 path=$2
+  shift 2
+  curl --proto '=https' --connect-timeout 10 --max-time 30 -s \
+    -X "$method" --header "@$_KEY_HEADER_TEMP" -w '%{http_code}' "$@" \
+    "https://api.ui.com/v1/connector/consoles/$_CONSOLE_ID/proxy/protect/api$path" || true
+}
