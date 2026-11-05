@@ -35,6 +35,19 @@
         "home_on_pause": true
       },
       "dynamic_auto_tracking": true
+    },
+    "EXAMPLE_CAMERA_ID_2_HERE": {
+      "enabled": true,
+      "preset_slots": [0, 4, 2],
+      "schedule": {
+        "start": "08:00",
+        "end": "20:00",
+        "days": ["mon", "tue", "wed", "thu", "fri"],
+        "constrain_start_minute": 15,
+        "constrain_end_minute": 45,
+        "home_on_pause": true
+      },
+      "dynamic_auto_tracking": false
     }
   }
 }
