@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.1](https://github.com/iceteaSA/unifi-ptz-better-patrol/compare/v1.1.0...v1.1.1) (2026-11-06)
+
+
+### Continuous Integration
+
+* drop the release PR CI dispatch and document run approval ([#17](https://github.com/iceteaSA/unifi-ptz-better-patrol/issues/17)) ([c61700a](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/c61700a8f1f16ac621e5896c11eb3c9021643c74))
+* run CI on release PRs and document the main rulesets ([#15](https://github.com/iceteaSA/unifi-ptz-better-patrol/issues/15)) ([6233a5e](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/6233a5e8f427d5efbcbfed4966816d7ff02591e6))
+
 ## [1.1.0](https://github.com/iceteaSA/unifi-ptz-better-patrol/compare/v1.0.4...v1.1.0) (2026-11-06)
 
 
