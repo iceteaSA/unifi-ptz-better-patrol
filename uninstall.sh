@@ -42,3 +42,6 @@ fi
 systemctl daemon-reload
 
 echo "Uninstallation complete. All components removed."
+
+# probe: unquoted expansion must fail shellcheck
+probe_fn() { local x; x=$1; echo $x; }
