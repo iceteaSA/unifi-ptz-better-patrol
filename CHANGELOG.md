@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.1.0](https://github.com/iceteaSA/unifi-ptz-better-patrol/compare/v1.0.4...v1.1.0) (2026-11-06)
+
+
+### Features
+
+* add option to constrain patrol to a reduced window ([#12](https://github.com/iceteaSA/unifi-ptz-better-patrol/issues/12)) ([0474769](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/04747690f6664d43278555f9c203564e24175c72))
+
+
+### Bug Fixes
+
+* honour enabled:false in camera config ([a13ee64](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/a13ee6466307e28cef998029f56ecfb40caebdfe))
+
+
+### Documentation
+
+* correct the deploy list, boolean defaults and test guidance ([7ad95f0](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/7ad95f0d396ab0ced9a233d1850162df95795075))
+* describe the test suite, CI gates and release assets ([93c5d45](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/93c5d4540913a0a8da36cdf1ace5dab66f27791a))
+
+
+### Tests
+
+* run the enabled tests through the patrol helper ([91c14c0](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/91c14c0d82d28881ef1c99ad3588a7b230d6f5bb))
+
+
+### Continuous Integration
+
+* gate releases on checks and attach release assets ([95c22dd](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/95c22dda48f23eda4ffe994e832aacf05cf7a745))
+* list every documented commit type in release notes ([b73b80c](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/b73b80c7bd8a1031fdcb4a30967699214059bb36))
+* run actionlint on the workflow files ([a6b105e](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/a6b105ec672195806b4824000d28ef15eb48711c))
+
 ## [1.0.4](https://github.com/iceteaSA/unifi-ptz-better-patrol/compare/v1.0.3...v1.0.4) (2026-08-10)
 
 
