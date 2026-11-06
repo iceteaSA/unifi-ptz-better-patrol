@@ -19,7 +19,6 @@ jobs:
     needs: checks
     runs-on: ubuntu-latest
     permissions:
-      actions: write
       contents: write
       issues: write
       pull-requests: write
@@ -34,15 +33,6 @@ jobs:
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
-
-      - name: Run CI on the release PR
-        # workflow_dispatch is the event that GITHUB_TOKEN can start. The
-        # resulting `checks` run attaches to the release branch head, which
-        # gives the release PR the result that the ruleset on main requires.
-        if: steps.release.outputs.prs_created == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref release-please--branches--main
 
   assets:
     # A tag created with GITHUB_TOKEN does not start other workflows, so the
