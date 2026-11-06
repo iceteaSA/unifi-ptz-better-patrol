@@ -52,6 +52,18 @@ jobs:
         # script merge without a check.
         run: git ls-files -z '*.sh' | xargs -0 shellcheck -s bash
 
+      - name: Run actionlint
+        # A defect in a workflow file can block a release, and these files have
+        # no other check. Runs after the shellcheck pin, so actionlint uses the
+        # same version for the scripts inside workflow steps.
+        run: |
+          mkdir -p "$RUNNER_TEMP/actionlint"
+          curl --fail --silent --show-error --location \
+            --output "$RUNNER_TEMP/download-actionlint.bash" \
+            https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash
+          bash "$RUNNER_TEMP/download-actionlint.bash" 1.7.12 "$RUNNER_TEMP/actionlint"
+          "$RUNNER_TEMP/actionlint/actionlint"
+
       - name: Install bats
         run: npm install --prefix tests/.bats bats@1.13.0 --no-audit --no-fund
 

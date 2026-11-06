@@ -15,7 +15,7 @@ set -euo pipefail
 version="${1:?usage: release-assets.sh <version> <output-dir>}"
 out_dir="${2:?usage: release-assets.sh <version> <output-dir>}"
 
-# Keep this list in sync with the files that install.sh deploys.
+# Include each file that install.sh deploys, plus the release metadata files.
 files=(
   install.sh
   uninstall.sh
@@ -36,14 +36,14 @@ cd "$repo_root"
 
 for f in "${files[@]}"; do
   if ! git cat-file -e "HEAD:$f" 2>/dev/null; then
-    echo "error: $f is not in the commit at HEAD" >&2
+    echo "Error: $f is not in the commit at HEAD" >&2
     exit 1
   fi
 done
 
 head_version=$(git show HEAD:VERSION | tr -d '[:space:]')
 if [[ "$head_version" != "$version" ]]; then
-  echo "error: VERSION at HEAD is '$head_version', expected '$version'" >&2
+  echo "Error: VERSION at HEAD is '$head_version', expected '$version'" >&2
   exit 1
 fi
 
