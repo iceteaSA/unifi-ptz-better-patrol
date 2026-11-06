@@ -8,13 +8,17 @@ the style guide and architecture — keep this file in sync when either changes.
 
 ## Verification
 
-There is **no test suite**. The only automated gate is shellcheck, and it currently passes clean:
+There are two automated gates. CI runs the two gates on each pull request and each push
+to `main`. The release workflow cuts a release only from a commit that the two gates accept:
 
 ```bash
-shellcheck -s bash api.sh discover.sh patrol.sh ptz-patrol.sh install.sh uninstall.sh
+git ls-files -z '*.sh' | xargs -0 shellcheck -s bash   # zero warnings
+tests/.bats/node_modules/.bin/bats tests/              # see tests/README.md for setup
 ```
 
-Keep it at zero warnings — the PR template has a checkbox for it.
+CI pins shellcheck 0.11.0 and jq 1.6, the jq version on the device. Put jq 1.6 first on
+`PATH` when you run the suite locally. The suite tests logic offline with stubbed API
+calls. It cannot test timing or hardware behavior.
 
 You cannot run the daemon on a dev machine: it needs a live Protect NVR at
 `nvr_address` with a local admin user. Verify logic by reading, not by executing.
@@ -157,7 +161,11 @@ logs. `config.json.example` is the schema and gets copied to `config.json` on in
 - Commits: imperative present tense, ≤72-char subject, conventional-style prefixes
   (`feat:`, `fix:`, `docs:`) as used in history.
 - Releases are automated with release-please. Only `feat`, `fix`, `docs`, `chore`, `refactor`,
-  `test`, and `ci` commits produce release entries.
+  `test`, and `ci` commits make release entries. A squash merge uses the PR title as the
+  commit subject, so the PR title must use one of these prefixes.
+- Each release gets `ptz-patrol-<version>.tar.gz` and `SHA256SUMS` from
+  `.github/scripts/release-assets.sh`. Keep its file list equal to the files that
+  `install.sh` deploys.
 - PRs use `.github/PULL_REQUEST_TEMPLATE.md` and expect hardware test results (device model,
   camera model, Protect version) — say so explicitly when a change was not hardware-tested.
 - Update `README.md` when behavior changes; it documents the patrol loop, detection

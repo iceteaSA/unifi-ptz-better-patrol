@@ -40,9 +40,10 @@ Enhancement suggestions are tracked as GitHub issues. When creating an enhanceme
    - All function-local variables must use `local`
    - Always double-quote variable expansions
    - Prefix functions with their module name (`api_*`, `patrol_*`, etc.)
-3. **Lint your changes**:
+3. **Lint and test your changes**. CI runs the same checks:
    ```bash
-   shellcheck -s bash api.sh discover.sh patrol.sh ptz-patrol.sh install.sh uninstall.sh
+   git ls-files -z '*.sh' | xargs -0 shellcheck -s bash
+   tests/.bats/node_modules/.bin/bats tests/   # setup: tests/README.md
    ```
 4. **Test your changes**:
    - Test on actual hardware if possible
