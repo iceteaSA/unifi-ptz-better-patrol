@@ -164,7 +164,7 @@ By default, patrol runs 24/7. Add a `schedule` block to restrict patrol to speci
       "end": "06:00",
       "days": ["mon", "tue", "wed", "thu", "fri"],
       "constrain_start_minute": 15,
-      "constrain_end_minute": 25,
+      "constrain_end_minute": 45,
       "home_on_pause": true
     }
   }
@@ -180,11 +180,11 @@ By default, patrol runs 24/7. Add a `schedule` block to restrict patrol to speci
 | `constrain_end_minute` | — | Optional numeric end minute (`0`-`59`) for the constrained patrol period. |
 | `home_on_pause` | `false` | Send camera to home position when patrol pauses outside the schedule window |
 
-Overnight windows work correctly — `"start": "22:00", "end": "06:00"` means patrol is active from 10 PM to 6 AM. Times use the device clock, not UTC. Check with `date` on your NVR to verify the timezone.
+Overnight windows work correctly — `"start": "22:00", "end": "06:00"` means patrol is active from 10 PM to 6 AM. Times use the system clock of the device (not UTC) — check with `date` on your NVR to verify the timezone.
 
-The optional minute constraint uses the device clock, like the schedule. Patrol runs only when both windows are active. The example uses `15` to `25`. Patrol runs during minutes 15–24 of each hour inside the schedule. A same-hour window from `15` to `25` includes minute 15 and excludes minute 25. A cross-hour window from `45` to `15` includes minutes 45–59 and 0–14.
+The optional minute constraint uses the device clock, like the schedule. Patrol runs only when both windows are active. The example uses `15` to `45`. Patrol runs during minutes 15-44 of each hour inside the schedule. A same-hour window from `15` to `45` includes minute 15 and excludes minute 45. A cross-hour window from `45` to `15` includes minutes 45-59 and 0-14.
 
-The windows intersect at schedule edges. For example, schedule `22:00`–`06:00` with `45` to `15` is active at 22:00–22:14 and 22:45–23:14. It continues each hour through 05:45–05:59.
+The windows intersect at schedule edges. For example, schedule `22:00`-`06:00` with `45` to `15` is active at 22:00-22:14 and 22:45-23:14. It continues each hour through 05:45-05:59.
 
 If a hold is active when a window ends, it finishes first. While the camera state is readable, the hold can continue for up to `max_tracking_wait`. The next schedule check then pauses patrol. An invalid, incomplete, or equal minute pair logs a warning. Patrol runs without the constraint.
 
@@ -398,6 +398,10 @@ Key operational signals:
 [2026-03-10 06:00:01] [INFO] [Front Door] Outside schedule window (22:00-06:00) — pausing patrol
 [2026-03-10 06:00:01] [INFO] [Front Door] Sent to home position
 [2026-03-10 22:00:01] [INFO] [Front Door] Schedule window active (22:00-06:00) — resuming patrol
+
+# Constrained schedule pause/resume
+[2026-03-10 22:45:01] [INFO] [Front Door] Outside schedule window (22:00-06:00, constrained to minutes 15 through 45 after the hour) — pausing patrol
+[2026-03-10 23:15:01] [INFO] [Front Door] Schedule window active (22:00-06:00, constrained to minutes 15 through 45 after the hour) — resuming patrol
 
 # Graceful shutdown
 [2026-03-10 13:00:00] [INFO] [main] Shutdown requested — stopping all patrols

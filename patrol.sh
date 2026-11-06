@@ -228,6 +228,17 @@ _patrol_reissue_failed_goto() {
   return 0
 }
 
+# ---------------------------------------------------------------------------
+# Schedule
+# ---------------------------------------------------------------------------
+
+# Parse the optional minute constraint.
+# Arguments: camera_config camera_name schedule_set
+#   camera_config: Effective camera configuration as JSON.
+#   camera_name: Camera name for log messages.
+#   schedule_set: 1 when both schedule start and end are set; otherwise 0.
+# Sets _PATROL_CONSTRAIN_START, _PATROL_CONSTRAIN_END, and _PATROL_CONSTRAIN_ACTIVE.
+# Returns 0 after parsing, including when the constraint is disabled.
 _patrol_parse_constrain() {
   local cam_config=$1 cam_name=$2 fields start_token end_token
   local supplied_start supplied_end start_field end_field
@@ -296,17 +307,13 @@ _patrol_parse_constrain() {
   fi
 
   if [[ "$start_field" != "V:" && "$end_field" != "V:" ]]; then
-    log "$cam_name" "warn" "Invalid constrained patrol window: both supplied values must be integers from 0 to 59 (${supplied_start}, ${supplied_end}) — constraint disabled"
+    log "$cam_name" "warn" "Invalid constrained patrol window (${supplied_start}, ${supplied_end}) — both values must be integers from 0 to 59 — constraint disabled"
   elif [[ "$start_field" != "V:" ]]; then
-    log "$cam_name" "warn" "Invalid constrained patrol start value (${supplied_start}); expected an integer from 0 to 59 with a valid end value (${supplied_end}) — constraint disabled"
+    log "$cam_name" "warn" "Invalid constrained patrol start value (${supplied_start}) — expected an integer from 0 to 59 — constraint disabled"
   else
-    log "$cam_name" "warn" "Invalid constrained patrol end value (${supplied_end}); expected an integer from 0 to 59 with a valid start value (${supplied_start}) — constraint disabled"
+    log "$cam_name" "warn" "Invalid constrained patrol end value (${supplied_end}) — expected an integer from 0 to 59 — constraint disabled"
   fi
 }
-
-# ---------------------------------------------------------------------------
-# Schedule
-# ---------------------------------------------------------------------------
 
 # Check if the current time falls within a patrol schedule window.
 # Arguments: schedule_start schedule_end schedule_days_json schedule_constrain_start_minute schedule_constrain_end_minute
@@ -323,7 +330,7 @@ _patrol_parse_constrain() {
 #   - Saturday 01:00 → in early-morning tail, check Friday (yesterday) → in list → active
 #   - Saturday 23:00 → check Saturday (today) → not in list → inactive
 is_within_schedule() {
-  local sched_start=$1 sched_end=$2 sched_days=$3 sched_constrain_start_minute=$4 sched_constrain_end_minute=$5
+  local sched_start=$1 sched_end=$2 sched_days=$3 sched_constrain_start_minute=${4:-} sched_constrain_end_minute=${5:-}
 
   # No schedule configured — always active
   if [[ -z "$sched_start" || -z "$sched_end" ]]; then
@@ -353,13 +360,12 @@ is_within_schedule() {
     return 1
   fi
 
-  # Extract the current minutes as a decimal number.
+  # Base-10 parsing keeps minutes 08 and 09 out of octal notation.
   local now_minute; now_minute="$((10#${now_hhmm##*:}))"
   local in_constrain_window=0
 
   if [[ -n "$sched_constrain_start_minute" && -n "$sched_constrain_end_minute" && "$sched_constrain_start_minute" -ne "$sched_constrain_end_minute" ]]; then
-    # Determine if the current minute falls within the active patrol sub-window for both within-hour and cross-hour cases
-    if (( sched_constrain_start_minute < sched_constrain_end_minute )); then 
+    if (( sched_constrain_start_minute < sched_constrain_end_minute )); then
       if (( now_minute >= sched_constrain_start_minute && now_minute < sched_constrain_end_minute )); then
         in_constrain_window=1
       fi
@@ -732,6 +738,10 @@ patrol_camera() {
   local preset_positions
   preset_positions=$(api_get_preset_positions "$cam_id")
 
+  local constrain_info=""
+  if (( constrain_active )); then
+    constrain_info=", constrained to minutes ${sched_constrain_start_minute} through ${sched_constrain_end_minute} after the hour"
+  fi
   local sched_info=""
   if [[ -n "$sched_start" && -n "$sched_end" ]]; then
     sched_info=" schedule=${sched_start}-${sched_end}"
@@ -786,11 +796,7 @@ patrol_camera() {
     # --- Schedule check ---
     if ! is_within_schedule "$sched_start" "$sched_end" "$sched_days" "$sched_constrain_start_minute" "$sched_constrain_end_minute"; then
       if (( schedule_paused == 0 )); then
-        if (( ! constrain_active )); then
-          log "$cam_name" "info" "Outside schedule window (${sched_start}-${sched_end}) — pausing patrol"
-        else
-          log "$cam_name" "info" "Outside constrained schedule window (${sched_start}-${sched_end}, limited to minutes ${sched_constrain_start_minute} through ${sched_constrain_end_minute} after the hour) — pausing patrol"
-        fi
+        log "$cam_name" "info" "Outside schedule window (${sched_start}-${sched_end}${constrain_info}) — pausing patrol"
         if [[ "$sched_home" == "true" ]]; then
           local home_code
           api_post_with_retry "/cameras/$cam_id/ptz/goto/-1" 2 3 >/dev/null || true
@@ -815,11 +821,7 @@ patrol_camera() {
       continue
     fi
     if (( schedule_paused == 1 )); then
-      if (( ! constrain_active )); then
-        log "$cam_name" "info" "Schedule window active (${sched_start}-${sched_end}) — resuming patrol"
-      else
-        log "$cam_name" "info" "Constrained schedule window active (${sched_start}-${sched_end}, between minutes ${sched_constrain_start_minute} through ${sched_constrain_end_minute} after the hour) — resuming patrol"
-      fi
+      log "$cam_name" "info" "Schedule window active (${sched_start}-${sched_end}${constrain_info}) — resuming patrol"
       schedule_paused=0
       expected_pan=-1; expected_tilt=-1; expected_zoom=-1
       acquisition_state="acquiring"

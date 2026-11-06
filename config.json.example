@@ -44,6 +44,7 @@
         "end": "20:00",
         "days": ["mon", "tue", "wed", "thu", "fri"],
         "constrain_start_minute": 15,
+        "_note_constrain_minutes": "The start minute is inclusive and the end minute is exclusive; the window wraps the hour when start > end and requires schedule.start and schedule.end.",
         "constrain_end_minute": 45,
         "home_on_pause": true
       },
