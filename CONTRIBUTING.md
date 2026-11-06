@@ -40,7 +40,7 @@ Enhancement suggestions are tracked as GitHub issues. When creating an enhanceme
    - All function-local variables must use `local`
    - Always double-quote variable expansions
    - Prefix functions with their module name (`api_*`, `patrol_*`, etc.)
-3. **Lint and test your changes**. CI runs the same checks:
+3. **Run the automated checks**. CI runs the same checks:
    ```bash
    git ls-files -z '*.sh' | xargs -0 shellcheck -s bash
    tests/.bats/node_modules/.bin/bats tests/   # setup: tests/README.md
@@ -84,7 +84,7 @@ api.sh          (base library: auth, HTTP, config, PTZ queries)
 
 ### Testing
 
-There is no test suite yet. If adding tests, use [bats-core](https://github.com/bats-core/bats-core). When making changes, manually test:
+The [bats-core](https://github.com/bats-core/bats-core) suite in `tests/` tests logic offline with stubbed API calls. See `tests/README.md` for setup. It cannot test timing or hardware behavior, so also test these manually on a device:
 
 1. **Startup**: Discovery, auto-setup, auth
 2. **Patrol cycling**: Correct preset sequence

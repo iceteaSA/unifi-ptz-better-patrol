@@ -126,6 +126,7 @@ launch_patrol_for_camera() {
 
   # Skip cameras disabled in config
   local cam_config; cam_config=$(get_camera_config "$cam_id")
+  # jq's // treats false as missing, so `.enabled // true` cannot read false.
   local enabled; enabled=$(echo "$cam_config" | jq -r 'if .enabled == null then true else .enabled end')
   if [[ "$enabled" == "false" ]]; then
     log "main" "info" "$cam_name: disabled in config — skipping"

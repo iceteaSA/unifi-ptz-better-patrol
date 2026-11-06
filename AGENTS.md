@@ -56,8 +56,9 @@ discover.sh   -> api.sh
 - **`set -euo pipefail` belongs only in the executables** (`ptz-patrol.sh`, `discover.sh`'s
   direct-run branch, `install.sh`, `uninstall.sh`). Never add it to `api.sh` or `patrol.sh`;
   `set -e` inside a sourced library kills the caller on any non-zero probe.
-- `install.sh` deploys only `api.sh discover.sh patrol.sh ptz-patrol.sh` + `uninstall.sh` +
-  the unit file. Adding a new script means editing that loop.
+- `install.sh` deploys only `install.sh api.sh discover.sh patrol.sh ptz-patrol.sh` +
+  `uninstall.sh` + the unit file. Adding a new device script means editing that loop and the
+  file list in `.github/scripts/release-assets.sh`.
 
 ## Platform constraints
 
@@ -136,6 +137,8 @@ logs. `config.json.example` is the schema and gets copied to `config.json` on in
 - Merge happens in exactly one place: `get_camera_config` does
   `jq --argjson o "$overrides" '. * $o'` (deep merge, `camera_overrides[id]` wins over `defaults`).
 - Field defaults are applied at read time with jq `//` fallbacks in `patrol_camera`.
+  For a boolean that can be `false`, use `if .x == null then <default> else .x end`
+  (see `.enabled`), because `//` reads `false` as missing.
 - `ptz_settle_seconds` is **clamped to `dwell_seconds/2`** (min 1s) at startup so real
   detection windows exist during dwell; poll interval is `min(5, dwell/3)` with a 2s floor.
   Both are documented behavior — `config.json.example` carries a `_note_ptz_settle` key.
@@ -148,7 +151,7 @@ logs. `config.json.example` is the schema and gets copied to `config.json` on in
 - All function-local variables use `local`. Split declaration from command substitution
   (`local val; val=$(cmd)`) so exit codes aren't swallowed.
 - Always double-quote expansions.
-- Read config via `cfg` / `jq -r '... // default'`.
+- Read config through `cfg` / `jq -r '... // default'`. For a boolean, use the form in Config.
 - Log with `log "<tag>" "<level>" "<message>"` (levels `error|warn|info|debug`, filtered by
   `_LOG_LEVEL`). Tag is the camera name, or `api`/`main`. Never `echo` directly.
 - Return conventions differ and callers depend on it: `api_get_with_retry` **echoes the body**
@@ -164,8 +167,8 @@ logs. `config.json.example` is the schema and gets copied to `config.json` on in
   `test`, and `ci` commits make release entries. A squash merge uses the PR title as the
   commit subject, so the PR title must use one of these prefixes.
 - Each release gets `ptz-patrol-<version>.tar.gz` and `SHA256SUMS` from
-  `.github/scripts/release-assets.sh`. Keep its file list equal to the files that
-  `install.sh` deploys.
+  `.github/scripts/release-assets.sh`. Its file list must include each file that
+  `install.sh` deploys, plus `README.md`, `CHANGELOG.md`, `LICENSE` and `VERSION`.
 - PRs use `.github/PULL_REQUEST_TEMPLATE.md` and expect hardware test results (device model,
   camera model, Protect version) — say so explicitly when a change was not hardware-tested.
 - Update `README.md` when behavior changes; it documents the patrol loop, detection
