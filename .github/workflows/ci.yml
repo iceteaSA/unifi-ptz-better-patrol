@@ -4,6 +4,12 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The release workflow calls this workflow, so a release is cut only from a
+  # commit that passed these checks.
+  workflow_call:
+
+permissions:
+  contents: read
 
 jobs:
   checks:
@@ -11,13 +17,13 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Pin shellcheck
         run: |
-          # Pinned so CI and developer machines agree. apt-get ships an older
-          # shellcheck whose warning set differs, which fails the gate on code
-          # a newer local shellcheck passes.
+          # Pinned so CI and developer machines agree. The apt-get package is
+          # older and its warning set differs, which fails the gate on code
+          # that a newer local version passes.
           mkdir -p "$RUNNER_TEMP/shellcheck/bin"
           curl --fail --silent --show-error --location \
             https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz \
@@ -42,7 +48,21 @@ jobs:
           jq --version
 
       - name: Run shellcheck
-        run: shellcheck -s bash api.sh discover.sh patrol.sh ptz-patrol.sh install.sh uninstall.sh
+        # Check every tracked shell script. A hardcoded file list lets a new
+        # script merge without a check.
+        run: git ls-files -z '*.sh' | xargs -0 shellcheck -s bash
+
+      - name: Run actionlint
+        # A defect in a workflow file can block a release, and these files have
+        # no other check. Runs after the shellcheck pin, so actionlint uses the
+        # same version for the scripts inside workflow steps.
+        run: |
+          mkdir -p "$RUNNER_TEMP/actionlint"
+          curl --fail --silent --show-error --location \
+            --output "$RUNNER_TEMP/download-actionlint.bash" \
+            https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash
+          bash "$RUNNER_TEMP/download-actionlint.bash" 1.7.12 "$RUNNER_TEMP/actionlint"
+          "$RUNNER_TEMP/actionlint/actionlint"
 
       - name: Install bats
         run: npm install --prefix tests/.bats bats@1.13.0 --no-audit --no-fund

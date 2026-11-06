@@ -41,7 +41,8 @@ Detailed list of changes:
 - [ ] Error recovery (auth failures, API errors)
 - [ ] Startup (discovery, auto-setup)
 - [ ] Shutdown (graceful cleanup)
-- [ ] Shellcheck passes: `shellcheck -s bash api.sh discover.sh patrol.sh ptz-patrol.sh install.sh uninstall.sh`
+- [ ] Shellcheck gives no warnings: `git ls-files -z '*.sh' | xargs -0 shellcheck -s bash`
+- [ ] Bats suite gives no failures: `tests/.bats/node_modules/.bin/bats tests/`
 - [ ] Other:
 
 ### Test Results

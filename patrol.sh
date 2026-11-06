@@ -643,8 +643,9 @@ patrol_camera() {
   local cam_config
   cam_config=$(get_camera_config "$cam_id")
 
+  # jq's // treats false as missing, so `.enabled // true` cannot read false.
   local enabled
-  enabled=$(echo "$cam_config" | jq -r '.enabled // true')
+  enabled=$(echo "$cam_config" | jq -r 'if .enabled == null then true else .enabled end')
   if [[ "$enabled" == "false" ]]; then
     log "$cam_name" "info" "Disabled — skipping"
     return
