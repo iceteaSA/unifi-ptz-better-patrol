@@ -52,6 +52,9 @@ caller does; no test relies on the unreachable empty-discovery call shape.
 `startup_settle.bats` covers stable, capped, unreadable, and once-per-loop
 startup settling.
 
+`camera_enabled.bats` tests the `enabled` config field: `false` skips the
+camera, and a missing, `null` or `true` value patrols it.
+
 ### Provenance — read this before trusting the fixture
 
 A fixture is evidence about one system at one moment, not a permanent fact.

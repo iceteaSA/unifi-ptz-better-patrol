@@ -218,3 +218,16 @@ patrol_probe() {
     "$rc" "$PATROL_GOTO_COUNT" "$PATROL_SLEEP_COUNT"
   return "$rc"
 }
+
+# Runs patrol_camera with the given merged camera config and one discovered
+# preset. A disabled camera returns at the enabled check. Any other camera
+# reaches the preset count check and returns with the "need 2+" warning.
+enabled_probe() {
+  ENABLED_PROBE_CONFIG=$1
+  get_camera_config() { printf '%s' "$ENABLED_PROBE_CONFIG"; }
+  local discovery_json='{"id":"cam-1","name":"TestCam","presets":[{"slot":1}]}'
+  patrol_camera cam-1 TestCam "$discovery_json"
+  local rc=$?
+  printf '\n__enabled_status=%s\n' "$rc"
+  return "$rc"
+}
