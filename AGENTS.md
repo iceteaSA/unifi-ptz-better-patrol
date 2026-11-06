@@ -160,7 +160,10 @@ logs. `config.json.example` is the schema and gets copied to `config.json` on in
 
 ## Contribution workflow
 
-- Branches: `feature/`, `fix/`, `docs/`, `refactor/`.
+- Branches: `feature/`, `fix/`, `docs/`, `refactor/`, `ci/`.
+- Rulesets apply to `main`: no force push or deletion, changes only through a pull request,
+  and a successful `checks` result before a merge. Do not merge with `gh pr merge --admin`.
+  That override is for the operator only.
 - Commits: imperative present tense, ≤72-char subject, conventional-style prefixes
   (`feat:`, `fix:`, `docs:`) as used in history.
 - Releases are automated with release-please. Only `feat`, `fix`, `docs`, `chore`, `refactor`,
