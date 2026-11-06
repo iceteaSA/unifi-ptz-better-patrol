@@ -47,6 +47,9 @@ baseline stabilization without sleeping or contacting hardware.
 `failed_goto.bats` covers previous-preset classification, the all-axis guard,
 the failed-goto side channel, bounded re-issues, and fail-safe position reads.
 
+`schedule_constrain.bats` covers same-hour and cross-hour minute windows,
+schedule intersection, and startup validation of the optional constraint.
+
 The patrol probes pass discovery JSON as the real `launch_patrol_for_camera`
 caller does; no test relies on the unreachable empty-discovery call shape.
 `startup_settle.bats` covers stable, capped, unreadable, and once-per-loop
