@@ -176,13 +176,17 @@ By default, patrol runs 24/7. Add a `schedule` block to restrict patrol to speci
 | `start` | — | Start time in 24h format (`"HH:MM"`). Required to enable schedule. |
 | `end` | — | End time in 24h format (`"HH:MM"`). Required to enable schedule. |
 | `days` | all days | Array of 3-letter day names: `"mon"`, `"tue"`, `"wed"`, `"thu"`, `"fri"`, `"sat"`, `"sun"` |
-|`constrain_start_minute`| —  | Optional numeric start minute (`0`-`59`) to begin constrained patrol period within an hour window. |
-| `constrain_end_minute` | — | Optional numeric end minute (`0`-`59`) to end constrained patrol period within an hour window.| 
+| `constrain_start_minute` | — | Optional numeric start minute (`0`-`59`) for the constrained patrol period. |
+| `constrain_end_minute` | — | Optional numeric end minute (`0`-`59`) for the constrained patrol period. |
 | `home_on_pause` | `false` | Send camera to home position when patrol pauses outside the schedule window |
 
-Overnight windows work correctly — `"start": "22:00", "end": "06:00"` means patrol is active from 10 PM to 6 AM. Times use the system clock of the device (not UTC) — check with `date` on your NVR to verify the timezone.
+Overnight windows work correctly — `"start": "22:00", "end": "06:00"` means patrol is active from 10 PM to 6 AM. Times use the device clock, not UTC. Check with `date` on your NVR to verify the timezone.
 
-Constraining the patrol to a shorter period within the schedule is optional and restricts patrol based on the minutes after the hour.  Using the start and end windows above, `"constrain_start_minute": 15, "constrain_end_minute": 45` means the first patrol would run from 10:15 PM through 10:45 PM, with the cadence repeating and the last patrol would run from 05:15 AM through 5:45 AM.  Coincidentally, `"constrain_start_minute": 45, "constrain_end_minute": 15` means the first patrol would run from 10:45 PM through 11:15PM, continuing on that cadence with the last patrol running from 5:45 AM to 6:00 AM, ending the window early based on the schedule end.  If either parameter is missing, null or invalid, patrol is not constrained and runs throughout the schedule per the default behavior.
+The optional minute constraint uses the device clock, like the schedule. Patrol runs only when both windows are active. The example uses `15` to `25`. Patrol runs during minutes 15–24 of each hour inside the schedule. A same-hour window from `15` to `25` includes minute 15 and excludes minute 25. A cross-hour window from `45` to `15` includes minutes 45–59 and 0–14.
+
+The windows intersect at schedule edges. For example, schedule `22:00`–`06:00` with `45` to `15` is active at 22:00–22:14 and 22:45–23:14. It continues each hour through 05:45–05:59.
+
+If tracking or motion holds when the window ends, they finish first. They can run for up to `max_tracking_wait`, as at a schedule end. Patrol pauses after the hold. An invalid or incomplete minute pair logs a warning. Patrol runs without the constraint.
 
 If no `schedule` is set (or set to `null`), patrol runs continuously. Per-camera schedules override the global default:
 
