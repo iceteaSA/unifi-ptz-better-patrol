@@ -164,6 +164,11 @@ logs. `config.json.example` is the schema and gets copied to `config.json` on in
 - Rulesets apply to `main`: no force push or deletion, changes only through a pull request,
   and a successful `checks` result before a merge. Do not merge with `gh pr merge --admin`.
   That override is for the operator only.
+- release-please opens its release PR with `GITHUB_TOKEN`, so the PR's CI run waits for
+  approval. Give approval to that run (Actions → "Approve and run", or
+  `gh api -X POST repos/iceteaSA/unifi-ptz-better-patrol/actions/runs/<run-id>/approve`),
+  wait for `checks`, then merge. A `workflow_dispatch` run on the release branch does not
+  satisfy the ruleset, because its check suite is not connected to the PR.
 - Commits: imperative present tense, ≤72-char subject, conventional-style prefixes
   (`feat:`, `fix:`, `docs:`) as used in history.
 - Releases are automated with release-please. Only `feat`, `fix`, `docs`, `chore`, `refactor`,

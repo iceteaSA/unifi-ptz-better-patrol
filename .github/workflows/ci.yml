@@ -7,10 +7,6 @@ on:
   # The release workflow calls this workflow, so a release is cut only from a
   # commit that passed these checks.
   workflow_call:
-  # The release workflow also starts this workflow on the release PR branch.
-  # A PR that GITHUB_TOKEN opens does not start pull_request runs, and the
-  # ruleset on main requires the `checks` result before a merge.
-  workflow_dispatch:
 
 permissions:
   contents: read
