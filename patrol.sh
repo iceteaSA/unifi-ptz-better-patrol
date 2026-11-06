@@ -231,6 +231,10 @@ _patrol_reissue_failed_goto() {
 _patrol_parse_constrain() {
   local cam_config=$1 cam_name=$2 fields start_token end_token
   local supplied_start supplied_end start_field end_field
+  local jq_status=0 schedule_set=${3:-1}
+  _PATROL_CONSTRAIN_START=""
+  _PATROL_CONSTRAIN_END=""
+  _PATROL_CONSTRAIN_ACTIVE=0
   fields=$(printf '%s' "$cam_config" | jq -r '
     def field($name):
       if ((.schedule // {}) | has($name)) then
@@ -245,13 +249,18 @@ _patrol_parse_constrain() {
       else "A"
       end;
     [field("constrain_start_minute"), field("constrain_end_minute")] | @tsv
-  ')
+  ' 2>/dev/null) || jq_status=$?
+  if (( jq_status != 0 )) || [[ -z "$fields" ]]; then
+    log "$cam_name" "warn" "Could not read the constrained patrol window from the camera config — constraint disabled"
+    return 0
+  fi
   IFS=$'\t' read -r start_token end_token <<< "$fields"
 
-  _PATROL_CONSTRAIN_START=""
-  _PATROL_CONSTRAIN_END=""
-  _PATROL_CONSTRAIN_ACTIVE=0
   if [[ "$start_token" == "A" && "$end_token" == "A" ]]; then
+    return 0
+  fi
+  if [[ "$schedule_set" != "1" ]]; then
+    log "$cam_name" "warn" "Constrained patrol minutes require schedule.start and schedule.end — constraint disabled"
     return 0
   fi
 
@@ -300,11 +309,12 @@ _patrol_parse_constrain() {
 # ---------------------------------------------------------------------------
 
 # Check if the current time falls within a patrol schedule window.
-# Arguments: schedule_start schedule_end schedule_days_json
+# Arguments: schedule_start schedule_end schedule_days_json schedule_constrain_start_minute schedule_constrain_end_minute
 #   schedule_start/end: "HH:MM" strings (24h). Empty = no schedule (always active).
 #   schedule_days_json: JSON array of 3-letter day names, e.g. '["mon","tue","wed"]'
 #                       Empty or "null" = all days.
-#   schedule_constrain_start_minute/end_minute: MM value (0-59) for the active patrol sub-window start/end minute of the hour. Empty = no patrol sub-window (active throughout schedule window).
+#   schedule_constrain_start_minute: Start minute (0-59) for the active patrol sub-window. Empty = no sub-window.
+#   schedule_constrain_end_minute: End minute (0-59) for the active patrol sub-window. Empty = no sub-window.
 # Returns 0 if patrol should be active, 1 if outside the schedule window.
 #
 # Day-of-week handling for overnight windows:
@@ -666,7 +676,11 @@ patrol_camera() {
   sched_start=$(echo "$cam_config" | jq -r '.schedule.start // empty')
   sched_end=$(echo "$cam_config" | jq -r '.schedule.end // empty')
   sched_days=$(echo "$cam_config" | jq -c '.schedule.days // null')
-  _patrol_parse_constrain "$cam_config" "$cam_name"
+  local schedule_set=0
+  if [[ -n "$sched_start" && -n "$sched_end" ]]; then
+    schedule_set=1
+  fi
+  _patrol_parse_constrain "$cam_config" "$cam_name" "$schedule_set"
   local constrain_active=$_PATROL_CONSTRAIN_ACTIVE
   sched_constrain_start_minute=$_PATROL_CONSTRAIN_START
   sched_constrain_end_minute=$_PATROL_CONSTRAIN_END

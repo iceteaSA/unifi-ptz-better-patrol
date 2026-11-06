@@ -31,6 +31,16 @@ schedule_status() {
   fi
 }
 
+parser_probe() {
+  local parser_status=0
+  LOG_LINES=()
+  _patrol_parse_constrain "$1" "$2" "$3" || parser_status=$?
+  printf '__parser_status=%s active=%s start=%s end=%s\n__logs=%s\n' \
+    "$parser_status" \
+    "$_PATROL_CONSTRAIN_ACTIVE" "$_PATROL_CONSTRAIN_START" \
+    "$_PATROL_CONSTRAIN_END" "${LOG_LINES[*]}"
+}
+
 @test "same-hour constraint includes its start and excludes its end" {
   set_time 12:15
   schedule_status 08:00 18:00 null 15 25
@@ -133,4 +143,31 @@ schedule_status() {
   [ "$_PATROL_CONSTRAIN_START" = 15 ]
   [ "$_PATROL_CONSTRAIN_END" = 25 ]
   [ "${LOG_LINES[0]}" = "info: Active constrained patrol period window: 15 through 25 minutes past the hour." ]
+}
+
+@test "non-object schedule values warn once without jq errors" {
+  local config
+  for config in '{"schedule":"x"}' '{"schedule":5}' '{"schedule":[]}'; do
+    run parser_probe "$config" Camera 1
+    [[ "$output" == *"__parser_status=0"* ]]
+    [[ "$output" == *"active=0 start= end="* ]]
+    [[ "$output" == *"__logs=warn: Could not read the constrained patrol window from the camera config — constraint disabled"* ]]
+    [[ "$output" != *"(, )"* ]]
+    [[ "$output" != *"jq: error"* ]]
+  done
+}
+
+@test "constraint without schedule start and end warns and stays off" {
+  run parser_probe '{"schedule":{"constrain_start_minute":15,"constrain_end_minute":25}}' Camera 0
+  [[ "$output" == *"__parser_status=0"* ]]
+  [[ "$output" == *"active=0 start= end="* ]]
+  [[ "$output" == *"__logs=warn: Constrained patrol minutes require schedule.start and schedule.end — constraint disabled"* ]]
+}
+
+@test "absent schedule and absent constraint fields stay silent" {
+  run parser_probe '{"schedule":null}' Camera 0
+  [[ "$output" == *"__parser_status=0"* ]]
+  [[ "$output" == *"active=0 start= end="* ]]
+  [[ "$output" == $'__parser_status=0 active=0 start= end=\n__logs=' ]]
+  [[ "$output" != *"warn:"* ]]
 }

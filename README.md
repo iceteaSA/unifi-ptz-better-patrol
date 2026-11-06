@@ -186,7 +186,9 @@ The optional minute constraint uses the device clock, like the schedule. Patrol 
 
 The windows intersect at schedule edges. For example, schedule `22:00`–`06:00` with `45` to `15` is active at 22:00–22:14 and 22:45–23:14. It continues each hour through 05:45–05:59.
 
-If tracking or motion holds when the window ends, they finish first. They can run for up to `max_tracking_wait`, as at a schedule end. Patrol pauses after the hold. An invalid or incomplete minute pair logs a warning. Patrol runs without the constraint.
+If a hold is active when a window ends, it finishes first. While the camera state is readable, the hold can continue for up to `max_tracking_wait`. The next schedule check then pauses patrol. An invalid, incomplete, or equal minute pair logs a warning. Patrol runs without the constraint.
+
+The schedule-pause actions also apply at each constrained-window end. If `home_on_pause` is `true`, the camera goes home at each end, including hourly ends inside the schedule. If `dynamic_auto_tracking` is `true`, auto-tracking turns off at each window end and on again when the next window starts.
 
 If no `schedule` is set (or set to `null`), patrol runs continuously. Per-camera schedules override the global default:
 
