@@ -72,7 +72,9 @@ PTZ_PATROL_BRANCH=dev curl -sSL https://raw.githubusercontent.com/iceteaSA/unifi
 
 ### Security
 
-The installer is the trust root. It is fetched from GitHub over HTTPS with certificate validation, then downloads the files systemd will run as root. Read `install.sh` before piping it to `bash` if you want to verify what it does. Branch installs are fetched directly from that branch and bypass even the implicit review that `main` receives; the installer prints a warning, but does not verify branch contents with a checksum or signature.
+The installer is the trust root. It is fetched from GitHub over HTTPS with certificate validation, then downloads the files systemd will run as root. Read `install.sh` before piping it to `bash` if you want to verify what it does. Remote installs resolve the selected branch to a commit before downloading. Every file then comes from that commit. If GitHub's API cannot resolve the branch, the installer prints a warning and falls back to the branch URL. Local-checkout installs record the checkout's commit when Git is available.
+
+The installer writes `/data/ptz-patrol/install-info` with `ref`, `commit`, and UTC `installed_at` values. The daemon logs its version and commit at startup, for example `ptz-patrol 1.1.0 (main@c61700a) starting`. The `discover.sh` output header prints the same version string. Bootstrap does not change this metadata.
 
 ### Manual Installation
 
@@ -382,6 +384,7 @@ Key operational signals:
 
 ```log
 # Discovery
+[2026-03-10 12:00:00] [INFO] [main] ptz-patrol 1.1.0 (main@c61700a) starting
 [2026-03-10 12:00:00] [INFO] [main] Discovering PTZ cameras...
 [2026-03-10 12:00:01] [INFO] [main] Found 3 PTZ camera(s) — launching patrol loops
 
@@ -476,6 +479,16 @@ bash /data/ptz-patrol/discover.sh
 
 # Full Removal
 /data/ptz-patrol/uninstall.sh
+```
+
+The discovery header reports the installed version and commit. Each camera block shows current auto-tracking object types separately from tracking support and the camera's tracking-with-zoom setting. For example:
+
+```text
+  G6 PTZ
+  PTZ (firmware):   true
+  Auto-tracking now: off
+  Tracking support: person
+  Tracking with zoom: on
 ```
 
 ## Project Structure
