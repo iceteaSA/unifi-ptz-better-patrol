@@ -308,6 +308,8 @@ The JSON payload has these fields:
 | `unreadable` | The five-minute camera-read warning has occurred. The state stays until `is_tracking` gets a correct `CONNECTED` camera response. |
 | `stopped` | The daemon is shutting down. |
 
+This example requires Home Assistant 2024.10 or later for the `triggers:` and `actions:` keys.
+
 This Home Assistant YAML stores the last report and state for one camera. It makes a notification when it gets no report for 600 seconds, two times the default heartbeat. A check runs each minute. Home Assistant uses the notification id to update the same notification. Change the webhook id, camera id, and helper names for your camera. Do not use this missing-heartbeat notification with a heartbeat of `0`.
 
 ```yaml

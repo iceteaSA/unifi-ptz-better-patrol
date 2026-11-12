@@ -17,6 +17,15 @@ setup() {
   assert_not_contains "$output" 'warn:'
 }
 
+@test "duplicate tracking types are sent once in their original order" {
+  run tracking_config_probe '{"dynamic_auto_tracking":true,"auto_tracking_object_types":["person","vehicle","person","vehicle"]}' true
+  [ "$status" -eq 0 ]
+  local body
+  IFS= read -r body < "$BATS_TEST_TMPDIR/patch-bodies"
+  [ "$body" = '{"smartDetectSettings":{"autoTrackingObjectTypes":["person","vehicle"]}}' ]
+  assert_contains "$output" 'dynamic_tracking=on types=person,vehicle'
+}
+
 @test "vehicle-capable camera enables person and vehicle" {
   run tracking_config_probe '{"dynamic_auto_tracking":true,"auto_tracking_object_types":["person","vehicle"]}' true
   [ "$status" -eq 0 ]

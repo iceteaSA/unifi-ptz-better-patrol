@@ -118,6 +118,54 @@ status_manual_probe() {
   status_patrol_probe '{}'
 }
 
+status_max_wait_probe() {
+  # shellcheck disable=SC2329 # The patrol library calls these camera stubs.
+  api_get_camera_state() {
+    _CACHED_CAM_STATE='{"id":"cam-1","state":"CONNECTED","isAutoTracking":true}'
+  }
+  # shellcheck disable=SC2329 # is_tracking calls this stub after each hold poll.
+  api_get_with_retry() {
+    _LAST_BODY='{"id":"cam-1","state":"CONNECTED","isAutoTracking":true}'
+  }
+  STATUS_END_TIME=1020
+  status_patrol_probe '{"max_tracking_wait":5,"status_heartbeat_seconds":0}'
+}
+
+status_exhausted_retry_probe() {
+  local -x cam_id=cam-1 cam_name=Overwatch
+  local -x status_state="" status_since=0 status_last_post=0 status_slot=4
+  local -x status_heartbeat_seconds=300 status_version=test
+  local -x goto_retry_count=2 last_commanded_slot=4
+  local -x expected_pan=1 expected_tilt=1 expected_zoom=1 acquisition_state=acquired acquisition_streak=2
+  status_initialize '{"status_webhook_url":"https://example.invalid/api/webhook/test-secret"}'
+  _patrol_reissue_failed_goto cam-1 Overwatch 4 2 || true
+  _patrol_status_tick patrolling 1000
+  wait
+}
+
+status_failed_goto_probe() {
+  local failure_code=$1 failed=0
+  # shellcheck disable=SC2329 # patrol_camera calls this goto stub.
+  api_post_with_retry() {
+    if (( FIELD_GOTOS == 0 )); then
+      FIELD_GOTOS=1
+      _LAST_HTTP_CODE=200
+    else
+      failed=1
+      _LAST_HTTP_CODE=$failure_code
+    fi
+  }
+  # shellcheck disable=SC2329 # The next patrol cycle observes the failed command.
+  api_ensure_auth() {
+    if (( failed )); then
+      _patrol_status_tick holding_activity 1040
+      wait
+      exit 0
+    fi
+  }
+  status_patrol_probe '{}'
+}
+
 status_load_shutdown() {
   local line definition="" reading=0
   while IFS= read -r line; do

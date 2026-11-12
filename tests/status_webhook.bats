@@ -189,3 +189,34 @@ setup() {
   assert_contains "$output" '"since":1000,"ts":1300'
   assert_not_contains "$output" '"ts":1030'
 }
+
+@test "max wait with ongoing activity does not report a patrolling transition" {
+  run status_max_wait_probe
+  [ "$status" -eq 0 ]
+  assert_contains "$output" 'Max wait (5s) hit'
+  run status_payloads
+  [ "$status" -eq 0 ]
+  assert_contains "$output" '"state":"holding_activity"'
+  assert_not_contains "$output" '"state":"patrolling"'
+}
+
+@test "exhausted goto retries clear the reported slot" {
+  run status_exhausted_retry_probe
+  [ "$status" -eq 0 ]
+  assert_contains "$output" 'after 2 retries'
+  run status_payloads
+  [ "$status" -eq 0 ]
+  assert_contains "$output" '"state":"patrolling","slot":null'
+}
+
+@test "failed goto clears a previously reported slot" {
+  local code
+  for code in 404 '' 500; do
+    run status_failed_goto_probe "$code"
+    [ "$status" -eq 0 ]
+    run status_payloads
+    [ "$status" -eq 0 ]
+    assert_contains "$output" '"state":"holding_activity","slot":null,"since":1040'
+    assert_not_contains "$output" '"state":"holding_activity","slot":0'
+  done
+}

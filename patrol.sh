@@ -219,6 +219,7 @@ _patrol_reissue_failed_goto() {
     log "$cam_name" "warn" "Goto slot $slot still has not taken effect after ${retry_limit} retries — advancing patrol"
     expected_pan=-1; expected_tilt=-1; expected_zoom=-1
     last_commanded_slot=-1
+    status_slot=""
     acquisition_state="none"
     acquisition_streak=0
     goto_retry_count=0
@@ -452,6 +453,7 @@ set_auto_tracking() {
 _patrol_parse_tracking_config() {
   local cam_config=$1 cam_discovery_json=$2 cam_name=$3
   local requested vehicle_capable type separator=""
+  local -A seen_types=()
   requested=$(jq -c 'if .auto_tracking_object_types == null then ["person"] else .auto_tracking_object_types end' <<< "$cam_config")
   vehicle_capable=$(jq -r '.feature_vehicle_tracking == true' <<< "${cam_discovery_json:-\{\}}")
   tracking_types_json="["
@@ -471,6 +473,8 @@ _patrol_parse_tracking_config() {
           continue
           ;;
       esac
+      [[ -z "${seen_types[$type]+x}" ]] || continue
+      seen_types["$type"]=1
       tracking_types_json+="$separator$type"
       type=${type#\"}; type=${type%\"}
       tracking_types_label+="$separator$type"
@@ -772,17 +776,17 @@ patrol_camera() {
   fi
 
   local status_state="" status_since=0 status_last_post=0 status_slot=""
-  local status_heartbeat_seconds status_version=""
-  status_heartbeat_seconds=$(jq -r '
-    (if .status_heartbeat_seconds == null then 300 else .status_heartbeat_seconds end) as $v
-    | if ($v | type) == "number" and ($v == 0 or $v >= 30) and ($v | floor) == $v
-      then $v else "invalid" end
-  ' <<< "$cam_config")
-  if [[ "$status_heartbeat_seconds" == "invalid" ]]; then
-    log "$cam_name" "warn" "Invalid status_heartbeat_seconds — using 300"
-    status_heartbeat_seconds=300
-  fi
+  local status_heartbeat_seconds=300 status_version=""
   if [[ -n "$_STATUS_WEBHOOK_URL" ]]; then
+    status_heartbeat_seconds=$(jq -r '
+      (if .status_heartbeat_seconds == null then 300 else .status_heartbeat_seconds end) as $v
+      | if ($v | type) == "number" and ($v == 0 or $v >= 30) and ($v | floor) == $v
+        then $v else "invalid" end
+    ' <<< "$cam_config")
+    if [[ "$status_heartbeat_seconds" == "invalid" ]]; then
+      log "$cam_name" "warn" "Invalid status_heartbeat_seconds — using 300"
+      status_heartbeat_seconds=300
+    fi
     status_version=$(get_install_version)
   fi
 
@@ -852,8 +856,10 @@ patrol_camera() {
   # Dynamic auto-tracking: enable tracking on smart detection, disable when clear
   local dyn_tracking
   dyn_tracking=$(echo "$cam_config" | jq -r '.dynamic_auto_tracking // false')
-  local tracking_types_json tracking_types_label tracking_with_zoom
-  _patrol_parse_tracking_config "$cam_config" "$cam_discovery_json" "$cam_name"
+  local tracking_types_json='["person"]' tracking_types_label=person tracking_with_zoom=null
+  if [[ "$dyn_tracking" == "true" ]]; then
+    _patrol_parse_tracking_config "$cam_config" "$cam_discovery_json" "$cam_name"
+  fi
 
   # Presets: explicit override or auto-discovered
   local -a presets
@@ -1201,7 +1207,9 @@ patrol_camera() {
         break
       fi
     done
-    _patrol_status_tick patrolling
+    if (( activity_active == 0 )); then
+      _patrol_status_tick patrolling
+    fi
     # Dynamic auto-tracking: tracking may have moved the camera, so reset
     # expected position and advance to next preset (don't snap back).
     if [[ "$dyn_tracking" == "true" ]] && (( tracking_enabled == 1 && waited > 0 )); then
@@ -1264,16 +1272,19 @@ patrol_camera() {
         log "$cam_name" "info" "→ Slot $slot [HTTP $code]"
         ;;
       404)
+        status_slot=""
         log "$cam_name" "error" "Preset slot $slot not found (HTTP 404) — advancing"
         idx=$(( (idx + 1) % ${#presets[@]} ))
         continue
         ;;
       "")
+        status_slot=""
         log "$cam_name" "error" "No response from goto command — advancing"
         idx=$(( (idx + 1) % ${#presets[@]} ))
         continue
         ;;
       *)
+        status_slot=""
         log "$cam_name" "warn" "Unexpected HTTP $code on goto slot $slot"
         ;;
     esac
