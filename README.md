@@ -469,6 +469,8 @@ systemctl restart systemd-journald && systemctl restart ptz-patrol
 
 ## Maintenance
 
+Upgrades from before 1.2.0 use the old installer: the version appears, but the commit appears after the next `install.sh` run creates `install-info`.
+
 ```bash
 # Service Management
 systemctl status ptz-patrol.service    # Current state

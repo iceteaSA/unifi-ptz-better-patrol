@@ -42,6 +42,7 @@
     ".": {
       "release-type": "simple",
       "version-file": "VERSION",
+      "extra-files": ["discover.sh"],
       "changelog-path": "CHANGELOG.md"
     }
   }

@@ -10,10 +10,23 @@ load install_version_helper
   [ "$output" = "1.1.0 (main@c61700a)" ]
 }
 
-@test "version helper reports missing version and metadata as unknown" {
+@test "version helper uses the embedded version when the file is missing" {
   run get_install_version
   [ "$status" -eq 0 ]
-  [ "$output" = "unknown (unknown@unknown)" ]
+  [ "$output" = "1.2.0 (unknown@unknown)" ]
+}
+
+@test "version helper uses the embedded version when the file is empty" {
+  printf '\n' > "$SCRIPT_DIR/VERSION"
+  run get_install_version
+  [ "$status" -eq 0 ]
+  [ "$output" = "1.2.0 (unknown@unknown)" ]
+}
+
+@test "embedded version matches the repository VERSION file" {
+  local version
+  IFS= read -r version < "$BATS_TEST_DIRNAME/../VERSION"
+  [ "$PTZ_PATROL_VERSION" = "$version" ]
 }
 
 @test "version helper uses unknown for missing commit metadata" {
