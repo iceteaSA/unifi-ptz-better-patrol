@@ -272,7 +272,7 @@ The tag uses the camera name from Protect. Cameras with the same name add the la
 [2026-03-10 12:00:10] [WARN] [api] Auth attempt 1/5 failed — retrying in 10s
 [2026-03-10 12:00:20] [INFO] [api] Authenticated
 [2026-03-10 12:00:20] [DEBUG] [api] GET /cameras returned HTTP 200 (attempt 1/3)
-[2026-03-10 12:00:20] [INFO] [Driveway] Patrol: presets=[0 4 2] dwell=30s settle=10s poll=5s hold=15s max_wait=300s manual_hold=120s preset_dwell=4:45,2:15
+[2026-03-10 12:00:20] [INFO] [Driveway #abc123] Patrol: presets=[0 4 2] dwell=30s settle=10s poll=5s hold=15s max_wait=300s manual_hold=120s preset_dwell=4:45,2:15
 [2026-03-10 12:00:20] [INFO] [Garden] Patrol: presets=[0 1 2 3 2 1] dwell=30s settle=10s poll=5s hold=15s max_wait=300s manual_hold=120s path=pingpong
 [2026-03-10 12:00:25] [INFO] [Driveway #abc123] Camera renamed in Protect: 'Driveway' → 'Gate'
 [2026-03-10 12:00:30] [INFO] [Gate #abc123] → Slot 4 [HTTP 200]
