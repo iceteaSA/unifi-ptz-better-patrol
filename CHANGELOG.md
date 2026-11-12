@@ -1,5 +1,38 @@
 # Changelog
 
+## [1.2.0](https://github.com/iceteaSA/unifi-ptz-better-patrol/compare/v1.1.0...v1.2.0) (2026-11-12)
+
+
+### Features
+
+* add per-preset dwell times ([913a679](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/913a67903d1c8da5e58129594aab169cd92bae33))
+* add pingpong patrol path ([8b487b8](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/8b487b8c5414822a2334279f8373846841d3b4e5))
+* per-preset dwell, pingpong path, installed version, HomeView fix ([d17b885](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/d17b8859eb8ebf848e9807d41579f27d3d1f8793))
+* record and log the installed version ([dbb9dc4](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/dbb9dc43bc38f2d683e47c78ae77a9713056b281))
+
+
+### Bug Fixes
+
+* clarify discovery output and warn on duplicate camera names ([218da65](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/218da65f3aa8d274a731be32919c6f33859429d3))
+* do not treat a HomeView return as manual control ([e4bca0c](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/e4bca0c2bf13520e19fe137e456cf17ca453d1a9))
+* harden install metadata and discovery parsing ([b5a63ef](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/b5a63ef3b797e0ea85d018a9f223bfdb5c67ee16))
+* keep per-slot timing safe and document the new invariants ([11b76e9](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/11b76e9e1aa1ee440768d8839043dddba008d4dd))
+* refresh renamed cameras and tag duplicate names ([8e7eac7](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/8e7eac7c2da6fdb36815e8d6c10ba599b38e3cd9))
+* tag only duplicate camera names and keep discovery lines per camera ([3c0bc19](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/3c0bc19cb47caadf658076b00894225587030e20))
+* write install-info before the service starts ([62ad720](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/62ad72032163c1ec73ffdea8203734c10209faa3))
+
+
+### Documentation
+
+* align AGENTS.md and the log sample with the new behaviour ([8f715a5](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/8f715a52c3be584c3fc1c38ebb8473245971001a))
+* simplify the new configuration text ([77770f6](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/77770f649310a4036aaffab838112c2d7f02e518))
+
+
+### Continuous Integration
+
+* drop the release PR CI dispatch and document run approval ([#17](https://github.com/iceteaSA/unifi-ptz-better-patrol/issues/17)) ([c61700a](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/c61700a8f1f16ac621e5896c11eb3c9021643c74))
+* run CI on release PRs and document the main rulesets ([#15](https://github.com/iceteaSA/unifi-ptz-better-patrol/issues/15)) ([6233a5e](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/6233a5e8f427d5efbcbfed4966816d7ff02591e6))
+
 ## [1.1.0](https://github.com/iceteaSA/unifi-ptz-better-patrol/compare/v1.0.4...v1.1.0) (2026-11-06)
 
 
