@@ -259,6 +259,19 @@ BOOT
 chmod +x "$ONBOOT_SCRIPT"
 echo "on_boot.d hook installed"
 
+# Record the deployed files after all deploy steps and before the service
+# starts, so the daemon's startup log reports this install, not the previous one.
+install_ref=$BRANCH
+if [[ "$LOCAL_CHECKOUT" == true ]]; then
+    install_ref=local
+fi
+install_info_tmp="$INSTALL_DIR/install-info.tmp.$$"
+printf 'ref=%s\ncommit=%s\ninstalled_at=%s\n' "$install_ref" "$INSTALL_COMMIT" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$install_info_tmp"
+if [[ -n "$INSTALL_DIRTY" ]]; then
+    printf 'dirty=%s\n' "$INSTALL_DIRTY" >> "$install_info_tmp"
+fi
+mv "$install_info_tmp" "$INSTALL_DIR/install-info"
+
 # Smart service management
 if systemctl is-active --quiet "$SERVICE_NAME.service"; then
     echo "Service already running — performing hot update"
@@ -278,16 +291,6 @@ else
     echo "Service successfully enabled and started"
 fi
 
-install_ref=$BRANCH
-if [[ "$LOCAL_CHECKOUT" == true ]]; then
-    install_ref=local
-fi
-install_info_tmp="$INSTALL_DIR/install-info.tmp.$$"
-printf 'ref=%s\ncommit=%s\ninstalled_at=%s\n' "$install_ref" "$INSTALL_COMMIT" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$install_info_tmp"
-if [[ -n "$INSTALL_DIRTY" ]]; then
-    printf 'dirty=%s\n' "$INSTALL_DIRTY" >> "$install_info_tmp"
-fi
-mv "$install_info_tmp" "$INSTALL_DIR/install-info"
 echo ""
 echo "Installation successful!"
 echo "Configuration: nano $INSTALL_DIR/config.json"
