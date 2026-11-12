@@ -99,6 +99,13 @@ while (( count == 0 && discovery_attempts < discovery_max )); do
 done
 
 log "main" "info" "Found $count PTZ camera(s) — launching patrol loops"
+duplicate_groups=$(discover_duplicate_name_groups "$cameras")
+duplicate_count=$(echo "$duplicate_groups" | jq 'length')
+for (( group_idx = 0; group_idx < duplicate_count; group_idx++ )); do
+  duplicate_name=$(echo "$duplicate_groups" | jq -r ".[$group_idx][0].name")
+  duplicate_ids=$(echo "$duplicate_groups" | jq -r ".[$group_idx] | map(.id) | join(", ")")
+  log "main" "warn" "Cameras $duplicate_ids share the name '$duplicate_name' — logs use '$duplicate_name #<last 6 id chars>'; rename one in Protect"
+done
 
 # ---------------------------------------------------------------------------
 # Per-camera setup & launch (used by initial discovery and re-discovery)
@@ -116,6 +123,10 @@ launch_patrol_for_camera() {
   local cam_id; cam_id=$(echo "$cameras_json" | jq -r ".[$idx].id")
   local cam_name; cam_name=$(echo "$cameras_json" | jq -r ".[$idx].name")
   local cam_json; cam_json=$(echo "$cameras_json" | jq -c ".[$idx]")
+  local id_suffix=""
+  if discover_duplicate_names "$cameras_json" | while IFS= read -r duplicate_id; do [[ "$duplicate_id" == "$cam_id" ]] && exit 0; done; then
+    id_suffix=${cam_id: -6}
+  fi
 
   # Already patrolling this camera — skip
   local existing
@@ -192,7 +203,7 @@ launch_patrol_for_camera() {
 
     while true; do
       rc=0
-      patrol_camera "$cam_id" "$cam_name" "$cam_json" || rc=$?
+      patrol_camera "$cam_id" "$cam_name" "$cam_json" "$id_suffix" || rc=$?
 
       if (( rc == 2 )); then
         # Permanent condition (e.g. no presets) — retry infrequently

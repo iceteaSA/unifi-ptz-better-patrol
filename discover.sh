@@ -31,9 +31,10 @@ discover_ptz_cameras() {
         .smartDetectSettings.autoTrackingObjectTypes // [] | map(select(. == "person")) | length > 0
       ),
       auto_tracking_types: (.smartDetectSettings.autoTrackingObjectTypes // []),
-      is_person_tracking: (
-        .smartDetectSettings.autoTrackingObjectTypes // [] | map(select(. == "person")) | length > 0
-      ),
+      auto_tracking_with_zoom: .smartDetectSettings.autoTrackingWithZoom,
+      feature_ptz: .featureFlags.isPtz,
+      feature_liveview_tracking: .featureFlags.hasLiveviewTracking,
+      feature_vehicle_tracking: .featureFlags.supportPtzVehicleTracking,
       active_patrol_slot: (.activePatrolSlot // null),
       return_home_ms: (.ptz.returnHomeAfterInactivityMs // null)
     }]
@@ -57,6 +58,25 @@ discover_ptz_cameras() {
   done
 
   printf '%s' "$result"
+}
+
+# Print ids of discovered PTZ cameras whose names are shared by another PTZ camera.
+discover_duplicate_names() {
+  jq -r '[.[] | select(.is_ptz == true or (.type | test("PTZ"; "i")))] as $cams | [$cams[].name] | group_by(.) | map(select(length > 1)) | flatten as $names | $cams[] | select(.name as $n | $names | index($n)) | .id' <<< "$1"
+}
+
+# Print duplicate-name groups for one warning per shared name.
+discover_duplicate_name_groups() {
+  jq -c '[.[] | select(.is_ptz == true or (.type | test("PTZ"; "i"))) | {name, id}] | group_by(.name) | map(select(length > 1))' <<< "$1"
+}
+
+# Format current tracking state and advertised support from discovery JSON.
+discover_tracking_lines() {
+  jq -r '.[] |
+    "  Auto-tracking now: \(if ((.auto_tracking_types // .smartDetectSettings.autoTrackingObjectTypes // []) | length) == 0 then "off" else ((.auto_tracking_types // .smartDetectSettings.autoTrackingObjectTypes) | join(", ")) end)",
+    "  Tracking support: \(if (.feature_ptz // .featureFlags.isPtz) == null or (.feature_liveview_tracking // .featureFlags.hasLiveviewTracking) == null then "unknown" elif (.feature_ptz // .featureFlags.isPtz) and (.feature_liveview_tracking // .featureFlags.hasLiveviewTracking) then (["person"] + (if (.feature_vehicle_tracking // .featureFlags.supportPtzVehicleTracking) then ["vehicle"] else [] end) | join(", ")) else "unknown" end)",
+    "  Tracking with zoom: \(if (if .auto_tracking_with_zoom == null then .smartDetectSettings.autoTrackingWithZoom else .auto_tracking_with_zoom end) == null then "unknown" elif (if .auto_tracking_with_zoom == null then .smartDetectSettings.autoTrackingWithZoom else .auto_tracking_with_zoom end) then "on" else "off" end)"
+  ' <<< "$1"
 }
 
 # Resolve per-camera settings: override > defaults
@@ -112,11 +132,11 @@ echo "$cameras" | jq -r '.[] |
   "  Model:            \(.type)",
   "  ID:               \(.id)",
   "  PTZ (firmware):   \(.is_ptz)",
-  "  Person tracking:  \(.is_person_tracking)",
   "  Current zoom:     \(.zoom_position)%",
   "  Presets:          \(.preset_count)",
   (.presets[] | "    Slot \(.slot): \(.name // "(unnamed)")  [pan=\(.ptz.pan // "?") tilt=\(.ptz.tilt // "?") zoom=\(.ptz.zoom // "?")]")
 '
+discover_tracking_lines "$cameras"
 
 echo ""
 echo "=== Effective config per camera ==="
