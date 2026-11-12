@@ -153,7 +153,7 @@ For example, `{"4": 45, "2": 15}` sets 45 seconds for slot 4 and 15 seconds for 
 
 For each slot, the settle window uses `ptz_settle_seconds`. Its maximum is half that slot's dwell (minimum 1 second). The poll interval is one third of that dwell. Its minimum is 2 seconds and its maximum is 5 seconds. Home-between-cycles uses the camera's `dwell_seconds`, settle window, and poll interval.
 
-Protect can send the camera to its HomeView after auto-tracking. If the camera drifts after target acquisition, patrol reads `/cameras/{id}/ptz/home` one time. The maximum difference from HomeView is 200 pan/tilt steps and 30 zoom steps. This maximum applies to each axis.
+Protect can send the camera to its HomeView after auto-tracking. For each drift check after target acquisition, patrol reads `/cameras/{id}/ptz/home` one time. The maximum difference from HomeView is 200 pan/tilt steps and 30 zoom steps. This maximum applies to each axis.
 
 Patrol then skips the manual-control hold and stops position checks until the next goto. If patrol cannot read HomeView, or its data is invalid, the usual drift rules apply. Patrol also skips this hold when you push Home in the Protect app: it counts as camera-initiated movement.
 

@@ -58,6 +58,18 @@ startup settling.
 `camera_enabled.bats` tests the `enabled` config field: `false` skips the
 camera, and a missing, `null` or `true` value patrols it.
 
+`preset_dwell.bats` tests the dwell map, slot timing, invalid slots, rejected gotos, and home timing.
+
+`path_mode.bats` tests pingpong paths, two-slot paths, and the fallback for invalid modes.
+
+`camera_name.bats` tests name changes, the name side channel, empty names, and duplicate-name suffixes.
+
+`homeview.bats` tests HomeView checks, read errors, axis thresholds, and position-read suppression.
+
+`field_test_helper.bash` supplies virtual time and patrol API stubs for field-feature tests.
+
+`homeview_test_helper.bash` supplies HomeView responses and counts home and position reads.
+
 ### Provenance — read this before trusting the fixture
 
 A fixture is evidence about one system at one moment, not a permanent fact.

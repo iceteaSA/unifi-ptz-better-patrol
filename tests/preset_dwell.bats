@@ -44,3 +44,32 @@ setup() {
   assert_contains "$output" '__goto=0 now=1009'
   assert_contains "$output" '__sleep=2 slot=-1 settle=3 poll=2'
 }
+
+@test "empty preset slot uses camera dwell without an array subscript abort" {
+  run field_probe '{"dwell_seconds":1,"ptz_settle_seconds":0,"preset_slots":[0,""]}' 3
+  [ "$status" -eq 0 ]
+  assert_contains "$output" '__goto= now=1001'
+  assert_contains "$output" '__goto=0 now=1002'
+  assert_not_contains "$output" 'bad array subscript'
+}
+
+@test "rejected goto keeps the previous successful goto settle and poll" {
+  FIELD_REJECT_SLOT=4
+  FIELD_TRACE_TIMING=1
+  local code after_failed
+  for code in 404 ''; do
+    FIELD_REJECT_CODE=$code
+    run field_probe '{"dwell_seconds":6,"ptz_settle_seconds":10,"preset_dwell_seconds":{"4":45}}' 3
+    [ "$status" -eq 0 ]
+    assert_contains "$output" '__goto=4 now=1006'
+    after_failed=${output#*__goto=4 now=1006}
+    assert_contains "$after_failed" '__is_tracking settle=3 last_goto_ts=1000 poll=2'
+    assert_not_contains "$after_failed" '__is_tracking settle=10'
+    assert_contains "$after_failed" '__goto=2 now=1006'
+    if [[ "$code" == "404" ]]; then
+      assert_contains "$after_failed" 'Preset slot 4 not found (HTTP 404)'
+    else
+      assert_contains "$after_failed" 'No response from goto command'
+    fi
+  done
+}

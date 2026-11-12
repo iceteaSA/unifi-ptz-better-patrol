@@ -114,6 +114,7 @@ Break these and the camera ends up in a wrong state that nothing corrects.
   *supposed* to drift off-preset. Drift thresholds are motor steps: pan 200, tilt 200, zoom 30.
   When a manual-control hold expires, expected positions reset to `-1` so stale pre-hold
   values don't immediately re-trigger.
+- After target acquisition, identify a live position at HomeView (`/ptz/home`) as camera-initiated, not manual control. Apply the drift thresholds to all axes. Clear `expected_pan/tilt/zoom` so the dwell stops position reads until the next goto. If the home read is unsuccessful, keep the manual-control hold rules.
 - **`_patrol_home_dwell` mutates caller-scope variables via bash dynamic scoping**
   (`last_goto_ts`, `expected_pan/tilt/zoom`, `tracking_enabled`, `external_control_until`).
   It looks pure from the signature; it is not. Adding `local` for any of those inside it
@@ -139,9 +140,8 @@ logs. `config.json.example` is the schema and gets copied to `config.json` on in
 - Field defaults are applied at read time with jq `//` fallbacks in `patrol_camera`.
   For a boolean that can be `false`, use `if .x == null then <default> else .x end`
   (see `.enabled`), because `//` reads `false` as missing.
-- `ptz_settle_seconds` is **clamped to `dwell_seconds/2`** (min 1s) at startup so real
-  detection windows exist during dwell; poll interval is `min(5, dwell/3)` with a 2s floor.
-  Both are documented behavior — `config.json.example` carries a `_note_ptz_settle` key.
+- At startup, use `min(ptz_settle_seconds, max(1, dwell_seconds/2))` for settle. Set the poll interval to `dwell_seconds/3`, with a minimum of 2 seconds and a maximum of 5 seconds.
+- After each goto with HTTP 200 or 204, use the slot's `preset_dwell_seconds` value or the camera's `dwell_seconds`. Recompute settle as `min(ptz_settle_seconds, max(1, slot_dwell/2))` and poll as `slot_dwell/3`, with a minimum of 2 seconds and a maximum of 5 seconds. Keep timing from the previous HTTP 200 or 204 goto after a rejected goto. Use the camera dwell, settle, and poll values for home-between-cycles. Make `_note_ptz_settle` in `config.json.example` agree with these rules.
 - Adding a config field means touching: `config.json.example`, the reader in `patrol.sh`
   (or `api.sh` for top-level fields), README's Configuration section.
 

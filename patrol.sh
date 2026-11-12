@@ -718,6 +718,7 @@ patrol_camera() {
   (( poll_interval_s > 5 )) && poll_interval_s=5
   (( poll_interval_s < 2 )) && poll_interval_s=2
   local camera_settle_seconds=$settle_seconds camera_poll_interval_s=$poll_interval_s
+  local slot_dwell=$dwell
   local path_mode path_info=""
   path_mode=$(printf '%s' "$cam_config" | jq -r 'if .path_mode == null then "loop" else .path_mode end')
   case "$path_mode" in
@@ -1117,19 +1118,22 @@ patrol_camera() {
       startup_settle_pending=0
     fi
     local code
-    local slot_dwell=${preset_dwells[$slot]:-$dwell}
-    local slot_max_settle=$(( slot_dwell / 2 ))
-    (( slot_max_settle < 1 )) && slot_max_settle=1
-    settle_seconds=$configured_settle_seconds
-    (( settle_seconds > slot_max_settle )) && settle_seconds=$slot_max_settle
-    poll_interval_s=$(( slot_dwell / 3 ))
-    (( poll_interval_s > 5 )) && poll_interval_s=5
-    (( poll_interval_s < 2 )) && poll_interval_s=2
     api_post_with_retry "/cameras/$cam_id/ptz/goto/$slot" 2 3 >/dev/null || true
     code="$_LAST_HTTP_CODE"
 
     case "$code" in
       200|204)
+        slot_dwell=$dwell
+        if [[ -n "$slot" ]]; then
+          slot_dwell=${preset_dwells[$slot]:-$dwell}
+        fi
+        local slot_max_settle=$(( slot_dwell / 2 ))
+        (( slot_max_settle < 1 )) && slot_max_settle=1
+        settle_seconds=$configured_settle_seconds
+        (( settle_seconds > slot_max_settle )) && settle_seconds=$slot_max_settle
+        poll_interval_s=$(( slot_dwell / 3 ))
+        (( poll_interval_s > 5 )) && poll_interval_s=5
+        (( poll_interval_s < 2 )) && poll_interval_s=2
         last_goto_ts=$(date +%s)
         acquisition_state="acquiring"
         acquisition_streak=0

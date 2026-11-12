@@ -10,6 +10,20 @@ FIELD_GOTOS=0
 FIELD_NOW=1000
 settle_seconds=0
 poll_interval_s=0
+FIELD_REJECT_SLOT=""
+FIELD_REJECT_CODE=404
+FIELD_TRACE_TIMING=0
+
+_field_tracking_definition=$(declare -f is_tracking)
+_field_tracking_definition=${_field_tracking_definition/is_tracking/_field_real_is_tracking}
+eval "$_field_tracking_definition"
+
+is_tracking() {
+  if [[ "$FIELD_TRACE_TIMING" == "1" ]]; then
+    printf '__is_tracking settle=%s last_goto_ts=%s poll=%s\n' "$4" "$3" "$poll_interval_s"
+  fi
+  _field_real_is_tracking "$@"
+}
 
 get_camera_config() { printf '%s' "$FIELD_CONFIG"; }
 api_get_preset_positions() { printf '[]'; }
@@ -26,6 +40,10 @@ sleep() {
 api_post_with_retry() {
   FIELD_GOTOS=$(( FIELD_GOTOS + 1 ))
   printf '__goto=%s now=%s\n' "${1##*/}" "$FIELD_NOW" >&2
+  if [[ -n "$FIELD_REJECT_SLOT" && "${1##*/}" == "$FIELD_REJECT_SLOT" ]]; then
+    _LAST_HTTP_CODE=$FIELD_REJECT_CODE
+    return 0
+  fi
   if (( FIELD_GOTOS >= FIELD_LIMIT )); then exit 0; fi
   _LAST_HTTP_CODE=200
 }
