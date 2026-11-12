@@ -470,6 +470,17 @@ api_get_ptz_position() {
   echo "$fields"
 }
 
+# A failed HomeView read must retain the manual-control hold rules.
+api_get_ptz_home() {
+  local cam_id=$1 fields
+  api_get "/cameras/$cam_id/ptz/home" >/dev/null || true
+  [[ "$_LAST_HTTP_CODE" == "200" ]] || return 1
+  fields=$(printf '%s' "$_LAST_BODY" | jq -r '
+    [.ptz.pan // -1, .ptz.tilt // -1, .ptz.zoom // -1] | @tsv
+  ' 2>/dev/null) || return 1
+  printf '%s\n' "$fields"
+}
+
 # Get the expected pan/tilt/zoom (in steps) for a preset slot from cached preset JSON.
 # Echoes tab-separated: pan tilt zoom.  Echoes "-1 -1 -1" if slot not found.
 get_preset_ptz() {

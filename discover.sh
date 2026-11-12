@@ -62,7 +62,9 @@ discover_ptz_cameras() {
 
 # Print ids of discovered PTZ cameras whose names are shared by another PTZ camera.
 discover_duplicate_names() {
-  jq -r '[.[] | select(.is_ptz == true or ((.type // "") | test("PTZ"; "i")))] as $cams | [$cams[].name] | group_by(.) | map(select(length > 1)) | flatten as $names | $cams[] | select(.name as $n | $names | index($n)) | .id' <<< "$1"
+  local groups
+  groups=$(discover_duplicate_name_groups "$1") || return 1
+  jq -r --argjson groups "$groups" '[$groups[][].id] as $ids | .[] | select(.id as $id | $ids | index($id)) | .id' <<< "$1"
 }
 
 # Print duplicate-name groups for one warning per shared name.
@@ -82,7 +84,7 @@ discover_id_suffix() {
 }
 
 # Format complete per-camera discovery blocks, including tracking state.
-discover_tracking_lines() {
+discover_camera_lines() {
   jq -r '.[] |
     "\n  \(.name)",
     "  Model:            \(.type)",
@@ -153,7 +155,7 @@ if (( count == 0 )); then
 fi
 
 echo "Found $count PTZ camera(s):"
-discover_tracking_lines "$cameras"
+discover_camera_lines "$cameras"
 
 echo ""
 echo "=== Effective config per camera ==="

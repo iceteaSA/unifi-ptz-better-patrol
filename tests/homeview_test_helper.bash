@@ -6,6 +6,7 @@ source "$BATS_TEST_DIRNAME/field_test_helper.bash"
 HOMEVIEW_BODY='{"slot":-1,"ptz":{"pan":10880,"tilt":11430,"zoom":0}}'
 HOMEVIEW_CODE=200
 HOMEVIEW_READS=0
+HOMEVIEW_READS_FILE=""
 external_control_until=0
 expected_pan=-1
 expected_tilt=-1
@@ -13,7 +14,9 @@ expected_zoom=-1
 
 api_get() {
   [[ "$1" == /cameras/cam-1/ptz/home ]] || return 99
+  IFS= read -r HOMEVIEW_READS < "$HOMEVIEW_READS_FILE"
   HOMEVIEW_READS=$(( HOMEVIEW_READS + 1 ))
+  printf '%s\n' "$HOMEVIEW_READS" > "$HOMEVIEW_READS_FILE"
   printf '__home_read=%s\n' "$HOMEVIEW_READS" >&2
   _LAST_HTTP_CODE=$HOMEVIEW_CODE
   _LAST_BODY=$HOMEVIEW_BODY
@@ -26,6 +29,7 @@ api_get_preset_positions() {
 sleep() {
   FIELD_NOW=$(( FIELD_NOW + $1 ))
   if (( external_control_until > 0 )); then
+    IFS= read -r HOMEVIEW_READS < "$HOMEVIEW_READS_FILE"
     printf '__external_hold=1 home_reads=%s\n' "$HOMEVIEW_READS"
     exit 0
   fi
@@ -35,6 +39,7 @@ sleep() {
 api_post_with_retry() {
   FIELD_GOTOS=$(( FIELD_GOTOS + 1 ))
   if (( FIELD_GOTOS >= 2 )); then
+    IFS= read -r HOMEVIEW_READS < "$HOMEVIEW_READS_FILE"
     local reads
     reads=$(ptz_reads_consumed)
     printf '__next_goto=%s now=%s reads=%s home_reads=%s previous_expected=%s/%s/%s\n' \
@@ -45,6 +50,8 @@ api_post_with_retry() {
 }
 
 homeview_patrol_probe() {
+  HOMEVIEW_READS_FILE="$BATS_TEST_TMPDIR/home-reads"
+  printf '0\n' > "$HOMEVIEW_READS_FILE"
   local dwell=${1:-18} live=${2:-$'10880\t11430\t0'}
   PTZ_READS=($'11127\t10412\t710' $'11127\t10412\t710' "$live" "$live" "$live")
   ptz_queue_prepare
@@ -52,11 +59,15 @@ homeview_patrol_probe() {
 }
 
 homeview_home_probe() {
+  HOMEVIEW_READS_FILE="$BATS_TEST_TMPDIR/home-reads"
+  printf '0\n' > "$HOMEVIEW_READS_FILE"
   PTZ_READS=($'11127\t10412\t710' $'11127\t10412\t710' $'10880\t11430\t0' $'10880\t11430\t0')
   home_probe 4
 }
 
 homeview_reset_probe() {
+  HOMEVIEW_READS_FILE="$BATS_TEST_TMPDIR/home-reads"
+  printf '0\n' > "$HOMEVIEW_READS_FILE"
   PTZ_READS=($'10880\t11430\t0' '')
   ptz_queue_prepare
   printf '__queued=%s\n' "${#PTZ_READS[@]}"

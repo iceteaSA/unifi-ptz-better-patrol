@@ -1,3 +1,5 @@
+#!/usr/bin/env bats
+
 load install_version_helper
 
 @test "version helper combines the version and install commit" {

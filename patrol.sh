@@ -124,11 +124,7 @@ is_externally_controlled() {
   if [[ -n "$drifted" ]]; then
     log "$cam_name" "info" "PTZ drift detected: ${drifted}"
     local home_fields="" home_pan home_tilt home_zoom
-    api_get "/cameras/$cam_id/ptz/home" >/dev/null || true
-    if [[ "$_LAST_HTTP_CODE" == "200" ]]; then
-      home_fields=$(printf '%s' "$_LAST_BODY" | jq -r '
-        [.ptz.pan // -1, .ptz.tilt // -1, .ptz.zoom // -1] | @tsv
-      ' 2>/dev/null) || home_fields=""
+    if home_fields=$(api_get_ptz_home "$cam_id"); then
       IFS=$'\t' read -r home_pan home_tilt home_zoom <<< "$home_fields"
       if [[ "$home_pan" =~ ^[0-9]+$ && "$home_tilt" =~ ^[0-9]+$ && "$home_zoom" =~ ^[0-9]+$ ]]; then
         pan_diff=$(( live_pan - home_pan )); pan_diff=${pan_diff#-}
@@ -452,16 +448,6 @@ set_auto_tracking() {
 # Home-between-cycles dwell
 # ---------------------------------------------------------------------------
 
-# The patrol owns these caller-scoped names, including during home dwell.
-_patrol_refresh_camera_name() {
-  [[ -z "${protect_name+x}" ]] && return 0
-  if [[ -n "$_LAST_CAM_NAME" && "$_LAST_CAM_NAME" != "$protect_name" ]]; then
-    log "$cam_name" "info" "Camera renamed in Protect: '$protect_name' → '$_LAST_CAM_NAME'"
-    protect_name=$_LAST_CAM_NAME
-    cam_name="${protect_name}${id_suffix:+ #$id_suffix}"
-  fi
-}
-
 # Send the camera to its home position and dwell there for the configured
 # dwell time, polling for motion/tracking and external control exactly like
 # a normal preset dwell.
@@ -669,6 +655,16 @@ _patrol_home_dwell() {
 # ---------------------------------------------------------------------------
 # Patrol loop
 # ---------------------------------------------------------------------------
+
+# Dynamic scoping lets this helper update the caller's cam_name and protect_name.
+_patrol_refresh_camera_name() {
+  [[ -z "${protect_name+x}" ]] && return 0
+  if [[ -n "$_LAST_CAM_NAME" && "$_LAST_CAM_NAME" != "$protect_name" ]]; then
+    log "$cam_name" "info" "Camera renamed in Protect: '$protect_name' → '$_LAST_CAM_NAME'"
+    protect_name=$_LAST_CAM_NAME
+    cam_name="${protect_name}${id_suffix:+ #$id_suffix}"
+  fi
+}
 
 # Resolve settings and preset list, then loop forever
 # Arguments: cam_id cam_name cam_discovery_json [id_suffix]
