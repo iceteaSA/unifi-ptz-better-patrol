@@ -81,6 +81,11 @@ shutdown() {
 api_init
 _STATUS_VERSION=$(get_install_version)
 
+# The first upgrade from an older version runs the older installer, which does
+# not make the config private. The file holds the NVR password and the webhook
+# secret, so the daemon also removes group and other access at each start.
+chmod go-rwx "$CONFIG_FILE" 2>/dev/null || true
+
 # Set traps AFTER api_init (which sets its own EXIT trap for cleanup).
 # This overrides api_cleanup on EXIT so shutdown() handles everything.
 trap shutdown SIGTERM SIGINT EXIT
