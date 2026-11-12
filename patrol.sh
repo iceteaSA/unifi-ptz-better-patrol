@@ -679,6 +679,16 @@ patrol_camera() {
   (( poll_interval_s > 5 )) && poll_interval_s=5
   (( poll_interval_s < 2 )) && poll_interval_s=2
   local camera_settle_seconds=$settle_seconds camera_poll_interval_s=$poll_interval_s
+  local path_mode path_info=""
+  path_mode=$(printf '%s' "$cam_config" | jq -r 'if .path_mode == null then "loop" else .path_mode end')
+  case "$path_mode" in
+    loop) ;;
+    pingpong) path_info=" path=pingpong" ;;
+    *)
+      log "$cam_name" "warn" "Invalid path_mode '$path_mode' — using loop"
+      path_mode="loop"
+      ;;
+  esac
 
   # Schedule: optional time window for when patrol should be active
   local sched_start sched_end sched_days sched_constrain_start_minute sched_constrain_end_minute sched_home
@@ -766,6 +776,13 @@ patrol_camera() {
     else ["K:<map>", tojson, "0", "-"] | @tsv end
   ')
 
+  if [[ "$path_mode" == "pingpong" ]] && (( ${#presets[@]} >= 3 )); then
+    local reverse_idx
+    for (( reverse_idx = ${#presets[@]} - 2; reverse_idx >= 1; reverse_idx-- )); do
+      presets+=("${presets[$reverse_idx]}")
+    done
+  fi
+
   if (( ${#presets[@]} < 2 )); then
     log "$cam_name" "warn" "Only ${#presets[@]} preset(s) — need 2+. Skipping."
     return 2  # Permanent condition — caller should not retry frequently
@@ -800,7 +817,7 @@ patrol_camera() {
   if [[ "$home_between_cycles" == "true" ]]; then
     home_cycle_info=" home_between_cycles=on"
   fi
-  log "$cam_name" "info" "Patrol: presets=[${presets[*]}] dwell=${dwell}s settle=${settle_seconds}s poll=${poll_interval_s}s hold=${motion_hold}s max_wait=${max_wait}s manual_hold=${manual_hold}s${sched_info}${dyn_info}${home_cycle_info}${preset_dwell_info}"
+  log "$cam_name" "info" "Patrol: presets=[${presets[*]}] dwell=${dwell}s settle=${settle_seconds}s poll=${poll_interval_s}s hold=${motion_hold}s max_wait=${max_wait}s manual_hold=${manual_hold}s${sched_info}${dyn_info}${home_cycle_info}${preset_dwell_info}${path_info}"
 
   local idx=0
   local last_goto_ts=0

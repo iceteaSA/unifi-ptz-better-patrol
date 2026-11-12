@@ -134,6 +134,7 @@ Edit `/data/ptz-patrol/config.json`:
 | `log_level` | `info` | Log verbosity: `error`, `warn`, `info`, `debug` |
 | `defaults.dwell_seconds` | `30` | Time at each preset before advancing |
 | `defaults.preset_dwell_seconds` | `{}` | Per-slot dwell seconds, for example `{"4": 45, "2": 15}`. Other slots use `dwell_seconds`. |
+| `defaults.path_mode` | `"loop"` | `"loop"` repeats the preset list. `"pingpong"` returns through the inner slots before it repeats. |
 | `defaults.motion_hold_seconds` | `15` | Hold time after motion/smart detection |
 | `defaults.max_tracking_wait` | `300` | Max seconds to wait during active tracking |
 | `defaults.manual_control_hold_seconds` | `120` | Backoff time after manual PTZ control detected |
@@ -149,6 +150,8 @@ Add entries under `camera_overrides` keyed by camera ID. Any field from `default
 Set `preset_dwell_seconds` in `defaults` or a camera override. Each key is a preset slot string. Each value must be an integer of at least 1, or a string of digits for that integer. Invalid entries and slots outside the patrol list log warnings and are ignored.
 
 For each slot, the settle window is the configured `ptz_settle_seconds`, limited to half that slot's dwell (minimum 1 second). The poll interval is one third of that dwell, limited to 2 through 5 seconds. Home-between-cycles uses the camera's `dwell_seconds`, settle window, and poll interval.
+
+Set `path_mode` to `"pingpong"` in `defaults` or a camera override to use both directions. For example, `[0, 1, 2, 3]` becomes `[0, 1, 2, 3, 2, 1]`. The endpoints do not repeat. Two slots keep their original order. Other values log a warning and use `"loop"`. With `home_between_cycles`, the camera visits home after the return leg, before the index returns to the first slot.
 
 > **Tip**: Run `bash /data/ptz-patrol/discover.sh` to see all discovered cameras, their IDs, presets, zoom positions, and effective config.
 
@@ -257,6 +260,7 @@ Log format: `[timestamp] [LEVEL] [tag] message`
 [2026-03-10 12:00:20] [INFO] [api] Authenticated
 [2026-03-10 12:00:20] [DEBUG] [api] GET /cameras returned HTTP 200 (attempt 1/3)
 [2026-03-10 12:00:20] [INFO] [Driveway] Patrol: presets=[0 4 2] dwell=30s settle=10s poll=5s hold=15s max_wait=300s manual_hold=120s preset_dwell=4:45,2:15
+[2026-03-10 12:00:20] [INFO] [Garden] Patrol: presets=[0 1 2 3 2 1] dwell=30s settle=10s poll=5s hold=15s max_wait=300s manual_hold=120s path=pingpong
 ```
 
 ## Operational Overview
