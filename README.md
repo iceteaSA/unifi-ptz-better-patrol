@@ -134,6 +134,7 @@ Edit `/data/ptz-patrol/config.json`:
 | `auto_discover` | `true` | Auto-discover PTZ cameras on startup |
 | `rediscovery_interval_seconds` | `600` | Re-discover cameras periodically (seconds); `0` to disable |
 | `log_level` | `info` | Log verbosity: `error`, `warn`, `info`, `debug` |
+| `status_webhook_url` | `""` | Optional HTTP or HTTPS URL for status posts. The URL is a secret. |
 | `defaults.dwell_seconds` | `30` | Time at each preset before advancing |
 | `defaults.preset_dwell_seconds` | `{}` | Dwell seconds for each slot. Other slots use `dwell_seconds`. |
 | `defaults.path_mode` | `"loop"` | `"loop"` uses the preset list again. `"pingpong"` uses the inner slots in the opposite order before the next cycle. |
@@ -144,8 +145,9 @@ Edit `/data/ptz-patrol/config.json`:
 | `defaults.home_on_shutdown` | `false` | Send cameras to home position on service stop |
 | `defaults.home_between_cycles` | `false` | Go to home position after completing a full preset cycle before starting again |
 | `defaults.dynamic_auto_tracking` | `false` | Enable dynamic auto-tracking (see below) |
-| `defaults.auto_tracking_object_types` | `["person"]` | Object types for dynamic auto-tracking. `vehicle` needs camera support. |
+| `defaults.auto_tracking_object_types` | `["person"]` | Object types for dynamic auto-tracking. `vehicle` is available only on compatible cameras. |
 | `defaults.auto_tracking_with_zoom` | `null` | `true` or `false` sets zoom when auto-tracking starts. `null` keeps the camera setting. |
+| `defaults.status_heartbeat_seconds` | `300` | Seconds between status reports. Use an integer with a minimum of `30`, or `0` for state changes only. |
 
 ### Per-Camera Overrides
 
@@ -247,9 +249,9 @@ Dynamic auto-tracking solves this by enabling auto-tracking **once at patrol sta
 |-------|---------|-------------|
 | `dynamic_auto_tracking` | `false` | Enable dynamic auto-tracking |
 
-Set `auto_tracking_object_types` to `["person","vehicle"]` to include vehicles on cameras with vehicle-tracking support, such as the AI PTZ Industrial. Person tracking is always allowed. Patrol checks the types at startup. It logs a warning for each unknown or unsupported type and removes it. A non-array or an empty result logs a warning and uses `["person"]`.
+Set `auto_tracking_object_types` to `["person","vehicle"]` for person and vehicle detection on a compatible camera, such as the AI PTZ Industrial. Patrol always accepts `person` as a type. Patrol checks the types at startup. It logs a warning for each unknown or unsupported type and removes it. A non-array or an empty result logs a warning and uses `["person"]`.
 
-Set `auto_tracking_with_zoom` to `true` or `false` to change the camera setting in the same enable request. Omit it or use `null` to keep the camera setting. Pause and shutdown disable tracking without a zoom change. Both keys can use camera overrides.
+Set `auto_tracking_with_zoom` to `true` or `false` to change the camera setting in the same enable request. Do not set it, or use `null`, to keep the camera setting. Pause and shutdown disable auto-tracking without a zoom change. The two keys can use camera overrides.
 
 When enabled, the script will:
 1. Disable any existing auto-tracking on the camera at startup (clean slate)
@@ -259,6 +261,104 @@ When enabled, the script will:
 5. Disable auto-tracking on schedule pause (re-enable on resume) and shutdown
 
 This is per-camera configurable — you can enable it on specific cameras via `camera_overrides`.
+
+### Home Assistant
+
+Set the top-level `status_webhook_url` to a Home Assistant webhook URL. For example:
+
+```json
+{
+  "status_webhook_url": "http://homeassistant.example:8123/api/webhook/REPLACE_WITH_RANDOM_ID",
+  "defaults": {
+    "status_heartbeat_seconds": 300
+  }
+}
+```
+
+The URL is a secret. Do not put it in logs, screenshots, or public reports. Use an empty string to disable posts. Patrol accepts only HTTP and HTTPS URLs. It rejects double-quote characters, backslashes, and control characters.
+
+Patrol posts on each state change. A heartbeat sends the current state again after `status_heartbeat_seconds`. Camera overrides can set this interval. Use an integer with a minimum of 30 seconds, or `0` to disable heartbeats.
+
+Reports follow the poll interval. Schedule pauses check at 60-second intervals. Use the default 300-second heartbeat for the notification example below.
+
+Each background request has a five-second limit and no retry. A post error is silent. A slow webhook does not stop patrol. Shutdown sends `stopped` for all patrolled cameras in parallel and waits for those requests before exit.
+
+The JSON payload has these fields:
+
+```json
+{
+  "camera_id": "YOUR_CAMERA_ID",
+  "camera": "Gate",
+  "state": "patrolling",
+  "slot": 4,
+  "since": 1794513600,
+  "ts": 1794513900,
+  "version": "1.2.0 (main@unknown)"
+}
+```
+
+`since` is the Unix time when the state started. `ts` is the Unix time of the post. A heartbeat keeps `since` unchanged. `slot` is the last commanded slot, or `null` before a command. Home uses slot `-1`. Shutdown uses `null` and sets `since` to the shutdown time.
+
+| State | Meaning |
+|-------|---------|
+| `patrolling` | Patrol commands and dwell at a selected slot or home. |
+| `holding_activity` | Movement or auto-tracking holds patrol. Temporary read errors also hold patrol. |
+| `holding_manual` | Manual PTZ control holds patrol. |
+| `paused_schedule` | The schedule has paused patrol. |
+| `unreadable` | The five-minute camera-read warning has occurred. The state stays until `is_tracking` gets a correct `CONNECTED` camera response. |
+| `stopped` | The daemon is shutting down. |
+
+This Home Assistant YAML stores the last report and state for one camera. It makes a notification when it gets no report for 600 seconds, two times the default heartbeat. A check runs each minute. Home Assistant uses the notification id to update the same notification. Change the webhook id, camera id, and helper names for your camera. Do not use this missing-heartbeat notification with a heartbeat of `0`.
+
+```yaml
+input_datetime:
+  ptz_gate_last_seen:
+    name: PTZ Gate last report
+    has_date: true
+    has_time: true
+
+input_text:
+  ptz_gate_status:
+    name: PTZ Gate status
+
+automation:
+  - alias: PTZ Gate status report
+    triggers:
+      - trigger: webhook
+        webhook_id: REPLACE_WITH_RANDOM_ID
+        allowed_methods: [POST]
+        local_only: true
+    conditions:
+      - condition: template
+        value_template: '{{ trigger.json.camera_id == "YOUR_CAMERA_ID" }}'
+    actions:
+      - action: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.ptz_gate_last_seen
+        data:
+          timestamp: '{{ now().timestamp() }}'
+      - action: input_text.set_value
+        target:
+          entity_id: input_text.ptz_gate_status
+        data:
+          value: '{{ trigger.json.state }}'
+
+  - alias: PTZ Gate missing heartbeat
+    triggers:
+      - trigger: time_pattern
+        minutes: "/1"
+    conditions:
+      - condition: template
+        value_template: >-
+          {{ states('input_datetime.ptz_gate_last_seen') not in ['unknown', 'unavailable']
+             and as_timestamp(now()) - as_timestamp(states('input_datetime.ptz_gate_last_seen'), 0) > 600 }}
+    actions:
+      - action: persistent_notification.create
+        data:
+          notification_id: ptz_gate_missing_heartbeat
+          title: PTZ patrol not reporting
+          message: Gate patrol has sent no status for twice its heartbeat interval.
+```
 
 ### Log Levels
 
@@ -475,7 +575,7 @@ systemctl restart systemd-journald && systemctl restart ptz-patrol
 
 ## Maintenance
 
-Upgrades from before 1.2.0 use the old installer: the version appears, but the commit appears after the next `install.sh` run creates `install-info`.
+Upgrades from versions before 1.2.0 use that version's installer: the daemon logs the version, but `install-info` records the commit after the next `install.sh` run.
 
 ```bash
 # Service Management

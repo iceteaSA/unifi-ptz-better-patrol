@@ -13,14 +13,14 @@ load install_version_helper
 @test "version helper uses the embedded version when the file is missing" {
   run get_install_version
   [ "$status" -eq 0 ]
-  [ "$output" = "1.2.0 (unknown@unknown)" ]
+  [ "$output" = "$PTZ_PATROL_VERSION (unknown@unknown)" ]
 }
 
 @test "version helper uses the embedded version when the file is empty" {
   printf '\n' > "$SCRIPT_DIR/VERSION"
   run get_install_version
   [ "$status" -eq 0 ]
-  [ "$output" = "1.2.0 (unknown@unknown)" ]
+  [ "$output" = "$PTZ_PATROL_VERSION (unknown@unknown)" ]
 }
 
 @test "embedded version matches the repository VERSION file" {

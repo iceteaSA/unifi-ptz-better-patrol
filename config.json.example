@@ -6,6 +6,8 @@
   "auto_discover": true,
   "rediscovery_interval_seconds": 600,
   "log_level": "info",
+  "_note_status_webhook": "The URL is a secret. Keep its webhook id private. An empty URL disables status posts.",
+  "status_webhook_url": "",
 
   "defaults": {
     "dwell_seconds": 30,
@@ -18,9 +20,11 @@
     "home_between_cycles": false,
     "schedule": null,
     "dynamic_auto_tracking": false,
-    "_note_auto_tracking": "Types must be an array. Person is always allowed. Vehicle needs camera support. Invalid or empty types use person. Zoom null keeps the camera setting. True or false changes zoom only when tracking is enabled.",
+    "_note_auto_tracking": "Types must be an array. Person is always a valid type. Vehicle is available only on compatible cameras. Invalid or empty types use person. Zoom null keeps the camera setting. True or false changes zoom only when auto-tracking is enabled.",
     "auto_tracking_object_types": ["person"],
-    "auto_tracking_with_zoom": null
+    "auto_tracking_with_zoom": null,
+    "_note_status_heartbeat": "Seconds between status posts. Use an integer with a minimum of 30, or 0 for state changes only.",
+    "status_heartbeat_seconds": 300
   },
 
   "camera_overrides": {

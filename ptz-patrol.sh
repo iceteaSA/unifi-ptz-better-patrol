@@ -13,12 +13,15 @@ _CHILD_PIDS=()
 _CAMERA_IDS=()
 _DYN_TRACKING_IDS=()
 declare -A _PID_TO_CAMERA=()   # Maps PID → camera_id (for pruning dead cameras)
+declare -A _CAMERA_NAMES=()
+_STATUS_VERSION=""
 _SHUTTING_DOWN=0
 
 shutdown() {
   # Guard against re-entrancy (EXIT fires again after exit 0)
   (( _SHUTTING_DOWN )) && return
   _SHUTTING_DOWN=1
+  local pid cam_id
 
   log "main" "info" "Shutdown requested — stopping all patrols"
   for pid in "${_CHILD_PIDS[@]}"; do
@@ -48,6 +51,24 @@ shutdown() {
     fi
   fi
 
+  if [[ -n "$_STATUS_WEBHOOK_URL" ]]; then
+    local status_now
+    # The builtin avoids a date process and gives all cameras one shutdown time.
+    printf -v status_now '%(%s)T' -1
+    local -a status_pids=()
+    for cam_id in "${_CAMERA_IDS[@]}"; do
+      (
+        api_post_status "$cam_id" "${_CAMERA_NAMES[$cam_id]}" stopped "" "$status_now" "$status_now" "$_STATUS_VERSION"
+        [[ -z "$_LAST_STATUS_PID" ]] || wait "$_LAST_STATUS_PID" 2>/dev/null || true
+      ) &
+      status_pids+=("$!")
+    done
+    # Parallel requests share one five-second curl limit before cleanup kills jobs.
+    for pid in "${status_pids[@]}"; do
+      wait "$pid" 2>/dev/null || true
+    done
+  fi
+
   log "main" "info" "Shutdown complete"
   api_cleanup
   exit 0
@@ -58,6 +79,7 @@ shutdown() {
 # ---------------------------------------------------------------------------
 
 api_init
+_STATUS_VERSION=$(get_install_version)
 
 # Set traps AFTER api_init (which sets its own EXIT trap for cleanup).
 # This overrides api_cleanup on EXIT so shutdown() handles everything.
@@ -75,7 +97,7 @@ if [[ "$auto_discover" != "true" ]]; then
   exit 1
 fi
 
-log "main" "info" "ptz-patrol $(get_install_version) starting"
+log "main" "info" "ptz-patrol $_STATUS_VERSION starting"
 log "main" "info" "Discovering PTZ cameras..."
 discovery_attempts=0
 discovery_max=10
@@ -144,6 +166,7 @@ launch_patrol_for_camera() {
   fi
 
   _CAMERA_IDS+=("$cam_id")
+  _CAMERA_NAMES["$cam_id"]=$cam_name
 
   # --- Auto-setup: disable conflicting Protect settings ---
 

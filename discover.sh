@@ -160,6 +160,8 @@ discover_camera_lines "$cameras"
 
 echo ""
 echo "=== Effective config per camera ==="
+webhook_status=off
+[[ -z "$_STATUS_WEBHOOK_URL" ]] || webhook_status=on
 for (( i = 0; i < count; i++ )); do
   cam_id=$(echo "$cameras" | jq -r ".[$i].id")
   cam_name=$(echo "$cameras" | jq -r ".[$i].name")
@@ -177,6 +179,8 @@ for (( i = 0; i < count; i++ )); do
   echo "    path_mode:                  $(echo "$cam_config" | jq -r '.path_mode // "loop"')"
   echo "    auto_tracking_object_types: $(echo "$cam_config" | jq -c 'if .auto_tracking_object_types == null then ["person"] else .auto_tracking_object_types end')"
   echo "    auto_tracking_with_zoom:    $(echo "$cam_config" | jq -r 'if .auto_tracking_with_zoom == null then "camera setting" else .auto_tracking_with_zoom end')"
+  echo "    status webhook:             $webhook_status"
+  echo "    status_heartbeat_seconds:   $(echo "$cam_config" | jq -r 'if .status_heartbeat_seconds == null then 300 else .status_heartbeat_seconds end')"
   echo "    motion_hold:                $(echo "$cam_config" | jq -r '.motion_hold_seconds // 15')s"
   echo "    max_tracking_wait:          $(echo "$cam_config" | jq -r '.max_tracking_wait // 300')s"
   echo "    manual_control_hold:        $(echo "$cam_config" | jq -r '.manual_control_hold_seconds // 120')s"
