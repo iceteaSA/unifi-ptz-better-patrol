@@ -430,6 +430,7 @@ is_within_schedule() {
 # Arguments: cam_id cam_name types_json action_label [zoom]
 #   types_json: validated object types to enable, '[]' to disable
 #   action_label: "enabled" or "disabled" (for logging)
+#   zoom: "true", "false" or "null" — sent only when enabling
 set_auto_tracking() {
   local cam_id=$1 cam_name=$2 types_json=$3 action_label=$4
   local zoom=${5:-null} zoom_field=""
@@ -450,6 +451,9 @@ set_auto_tracking() {
 }
 
 # These values use caller scope to prevent poll-time parsing.
+# Reads/writes these caller-scope variables directly (not local to this
+# function, shared through Bash dynamic scoping):
+#   tracking_types_json tracking_types_label tracking_with_zoom
 _patrol_parse_tracking_config() {
   local cam_config=$1 cam_discovery_json=$2 cam_name=$3
   local requested vehicle_capable type separator=""
@@ -495,6 +499,58 @@ _patrol_parse_tracking_config() {
       tracking_with_zoom=null
       ;;
   esac
+}
+
+# ---------------------------------------------------------------------------
+# Status and camera-name updates
+# ---------------------------------------------------------------------------
+
+# The state fields use caller scope so home dwell reports the same camera state.
+# Reads/writes these caller-scope variables directly (not local to this
+# function, shared through Bash dynamic scoping):
+#   cam_id cam_name status_state status_since status_last_post status_slot
+#   status_heartbeat_seconds status_version
+_patrol_status_tick() {
+  local next_state=$1 now=${2:-}
+  [[ -n "$_STATUS_WEBHOOK_URL" ]] || return 0
+  if [[ -z "$now" ]]; then
+    # The Bash builtin gets current time without a date process on each status poll.
+    printf -v now '%(%s)T' -1
+  fi
+  if [[ "$next_state" != "$status_state" ]]; then
+    status_state=$next_state
+    status_since=$now
+  elif (( status_heartbeat_seconds == 0 || now - status_last_post < status_heartbeat_seconds )); then
+    return 0
+  fi
+  api_post_status "$cam_id" "$cam_name" "$status_state" "$status_slot" "$status_since" "$now" "$status_version"
+  status_last_post=$now
+}
+
+# Reads/writes these caller-scope variables directly (not local to this
+# function, shared through Bash dynamic scoping):
+#   status_state
+# Nested status updates share the caller's other status fields.
+_patrol_status_activity() {
+  local active=$1 known=$2 now=${3:-}
+  [[ -n "$_STATUS_WEBHOOK_URL" ]] || return 0
+  if [[ "$known" == "0" && "$status_state" == "unreadable" ]]; then
+    _patrol_status_tick unreadable "$now"
+  elif [[ "$active" == "1" ]]; then
+    _patrol_status_tick holding_activity "$now"
+  else
+    _patrol_status_tick patrolling "$now"
+  fi
+}
+
+# Dynamic scoping lets this helper update the caller's cam_name and protect_name.
+_patrol_refresh_camera_name() {
+  [[ -z "${protect_name+x}" ]] && return 0
+  if [[ -n "$_LAST_CAM_NAME" && "$_LAST_CAM_NAME" != "$protect_name" ]]; then
+    log "$cam_name" "info" "Camera renamed in Protect: '$protect_name' → '$_LAST_CAM_NAME'"
+    protect_name=$_LAST_CAM_NAME
+    cam_name="${protect_name}${id_suffix:+ #$id_suffix}"
+  fi
 }
 
 # ---------------------------------------------------------------------------
@@ -714,46 +770,6 @@ _patrol_home_dwell() {
 # ---------------------------------------------------------------------------
 # Patrol loop
 # ---------------------------------------------------------------------------
-
-# The state fields use caller scope so home dwell reports the same camera state.
-_patrol_status_tick() {
-  local next_state=$1 now=${2:-}
-  [[ -n "$_STATUS_WEBHOOK_URL" ]] || return 0
-  if [[ -z "$now" ]]; then
-    # The Bash builtin gets fresh time without a date process on each status poll.
-    printf -v now '%(%s)T' -1
-  fi
-  if [[ "$next_state" != "$status_state" ]]; then
-    status_state=$next_state
-    status_since=$now
-  elif (( status_heartbeat_seconds == 0 || now - status_last_post < status_heartbeat_seconds )); then
-    return 0
-  fi
-  api_post_status "$cam_id" "$cam_name" "$status_state" "$status_slot" "$status_since" "$now" "$status_version"
-  status_last_post=$now
-}
-
-_patrol_status_activity() {
-  local active=$1 known=$2 now=${3:-}
-  [[ -n "$_STATUS_WEBHOOK_URL" ]] || return 0
-  if [[ "$known" == "0" && "$status_state" == "unreadable" ]]; then
-    _patrol_status_tick unreadable "$now"
-  elif [[ "$active" == "1" ]]; then
-    _patrol_status_tick holding_activity "$now"
-  else
-    _patrol_status_tick patrolling "$now"
-  fi
-}
-
-# Dynamic scoping lets this helper update the caller's cam_name and protect_name.
-_patrol_refresh_camera_name() {
-  [[ -z "${protect_name+x}" ]] && return 0
-  if [[ -n "$_LAST_CAM_NAME" && "$_LAST_CAM_NAME" != "$protect_name" ]]; then
-    log "$cam_name" "info" "Camera renamed in Protect: '$protect_name' → '$_LAST_CAM_NAME'"
-    protect_name=$_LAST_CAM_NAME
-    cam_name="${protect_name}${id_suffix:+ #$id_suffix}"
-  fi
-}
 
 # Resolve settings and preset list, then loop forever
 # Arguments: cam_id cam_name cam_discovery_json [id_suffix]

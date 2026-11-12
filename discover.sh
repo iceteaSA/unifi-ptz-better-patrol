@@ -179,7 +179,7 @@ for (( i = 0; i < count; i++ )); do
   echo "    path_mode:                  $(echo "$cam_config" | jq -r '.path_mode // "loop"')"
   echo "    auto_tracking_object_types: $(echo "$cam_config" | jq -c 'if .auto_tracking_object_types == null then ["person"] else .auto_tracking_object_types end')"
   echo "    auto_tracking_with_zoom:    $(echo "$cam_config" | jq -r 'if .auto_tracking_with_zoom == null then "camera setting" else .auto_tracking_with_zoom end')"
-  echo "    status webhook:             $webhook_status"
+  echo "    status_webhook_url:         $webhook_status"
   echo "    status_heartbeat_seconds:   $(echo "$cam_config" | jq -r 'if .status_heartbeat_seconds == null then 300 else .status_heartbeat_seconds end')"
   echo "    motion_hold:                $(echo "$cam_config" | jq -r '.motion_hold_seconds // 15')s"
   echo "    max_tracking_wait:          $(echo "$cam_config" | jq -r '.max_tracking_wait // 300')s"

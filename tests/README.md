@@ -66,6 +66,20 @@ camera, and a missing, `null` or `true` value patrols it.
 
 `homeview.bats` tests HomeView checks, read errors, axis thresholds, and position-read suppression.
 
+`discover_duplicates.bats` tests duplicate names, PTZ filters, and camera-id suffixes.
+
+`discover_tracking.bats` tests camera output, object types, zoom, and firmware flags.
+
+`install_version.bats` tests version metadata, the embedded fallback, and the release version guard.
+
+`tracking_config.bats` tests type validation, duplicate types, zoom settings, and schedule resume.
+
+`status_webhook.bats` tests state changes, heartbeats, transport privacy, slot values, and shutdown.
+
+`installer_config.bats` tests private config files, temporary update files, bootstrap, and proxy settings.
+
+`startup_spawn.bats` tests that disabled `dynamic_auto_tracking` and webhook settings add no jq processes at startup.
+
 `field_test_helper.bash` supplies virtual time and patrol API stubs for field-feature tests.
 
 `homeview_test_helper.bash` supplies HomeView responses and counts home and position reads.
