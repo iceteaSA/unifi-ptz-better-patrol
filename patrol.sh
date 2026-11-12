@@ -124,11 +124,7 @@ is_externally_controlled() {
   if [[ -n "$drifted" ]]; then
     log "$cam_name" "info" "PTZ drift detected: ${drifted}"
     local home_fields="" home_pan home_tilt home_zoom
-    api_get "/cameras/$cam_id/ptz/home" >/dev/null || true
-    if [[ "$_LAST_HTTP_CODE" == "200" ]]; then
-      home_fields=$(printf '%s' "$_LAST_BODY" | jq -r '
-        [.ptz.pan // -1, .ptz.tilt // -1, .ptz.zoom // -1] | @tsv
-      ' 2>/dev/null) || home_fields=""
+    if home_fields=$(api_get_ptz_home "$cam_id"); then
       IFS=$'\t' read -r home_pan home_tilt home_zoom <<< "$home_fields"
       if [[ "$home_pan" =~ ^[0-9]+$ && "$home_tilt" =~ ^[0-9]+$ && "$home_zoom" =~ ^[0-9]+$ ]]; then
         pan_diff=$(( live_pan - home_pan )); pan_diff=${pan_diff#-}
@@ -223,6 +219,7 @@ _patrol_reissue_failed_goto() {
     log "$cam_name" "warn" "Goto slot $slot still has not taken effect after ${retry_limit} retries — advancing patrol"
     expected_pan=-1; expected_tilt=-1; expected_zoom=-1
     last_commanded_slot=-1
+    status_slot=""
     acquisition_state="none"
     acquisition_streak=0
     goto_retry_count=0
@@ -430,15 +427,20 @@ is_within_schedule() {
 # ---------------------------------------------------------------------------
 
 # Enable or disable auto-tracking on a camera via API PATCH.
-# Arguments: cam_id cam_name types_json action_label
-#   types_json: '["person"]' to enable, '[]' to disable
+# Arguments: cam_id cam_name types_json action_label [zoom]
+#   types_json: validated object types to enable, '[]' to disable
 #   action_label: "enabled" or "disabled" (for logging)
+#   zoom: "true", "false" or "null" — sent only when enabling
 set_auto_tracking() {
   local cam_id=$1 cam_name=$2 types_json=$3 action_label=$4
+  local zoom=${5:-null} zoom_field=""
+  if [[ "$types_json" != "[]" && ( "$zoom" == "true" || "$zoom" == "false" ) ]]; then
+    zoom_field=",\"autoTrackingWithZoom\":$zoom"
+  fi
   api_ensure_auth
   local code
   code=$(api_patch "/cameras/$cam_id" \
-    "{\"smartDetectSettings\":{\"autoTrackingObjectTypes\":$types_json}}") || true
+    "{\"smartDetectSettings\":{\"autoTrackingObjectTypes\":$types_json$zoom_field}}") || true
   if [[ "$code" == "200" ]]; then
     log "$cam_name" "info" "Auto-tracking $action_label ($types_json)"
     return 0
@@ -448,11 +450,100 @@ set_auto_tracking() {
   fi
 }
 
+# These values use caller scope to prevent poll-time parsing.
+# Reads/writes these caller-scope variables directly (not local to this
+# function, shared through Bash dynamic scoping):
+#   tracking_types_json tracking_types_label tracking_with_zoom
+_patrol_parse_tracking_config() {
+  local cam_config=$1 cam_discovery_json=$2 cam_name=$3
+  local requested vehicle_capable type separator=""
+  local -A seen_types=()
+  requested=$(jq -c 'if .auto_tracking_object_types == null then ["person"] else .auto_tracking_object_types end' <<< "$cam_config")
+  vehicle_capable=$(jq -r '.feature_vehicle_tracking == true' <<< "${cam_discovery_json:-\{\}}")
+  tracking_types_json="["
+  tracking_types_label=""
+  if jq -e 'type == "array"' <<< "$requested" >/dev/null; then
+    while IFS= read -r type; do
+      case "$type" in
+        '"person"') ;;
+        '"vehicle"')
+          if [[ "$vehicle_capable" != "true" ]]; then
+            log "$cam_name" "warn" "Unsupported auto-tracking type $type — ignoring"
+            continue
+          fi
+          ;;
+        *)
+          log "$cam_name" "warn" "Unknown auto-tracking type $type — ignoring"
+          continue
+          ;;
+      esac
+      [[ -z "${seen_types[$type]+x}" ]] || continue
+      seen_types["$type"]=1
+      tracking_types_json+="$separator$type"
+      type=${type#\"}; type=${type%\"}
+      tracking_types_label+="$separator$type"
+      separator=","
+    done < <(jq -c '.[]' <<< "$requested")
+  fi
+  tracking_types_json+="]"
+  if [[ "$tracking_types_json" == "[]" ]]; then
+    log "$cam_name" "warn" 'Invalid or empty auto_tracking_object_types — using ["person"]'
+    tracking_types_json='["person"]'
+    tracking_types_label="person"
+  fi
+  tracking_with_zoom=$(jq -r 'if .auto_tracking_with_zoom == null then null else .auto_tracking_with_zoom end' <<< "$cam_config")
+  case "$tracking_with_zoom" in
+    true|false|null) ;;
+    *)
+      log "$cam_name" "warn" "Invalid auto_tracking_with_zoom — keeping camera setting"
+      tracking_with_zoom=null
+      ;;
+  esac
+}
+
 # ---------------------------------------------------------------------------
-# Home-between-cycles dwell
+# Status and camera-name updates
 # ---------------------------------------------------------------------------
 
-# The patrol owns these caller-scoped names, including during home dwell.
+# The state fields use caller scope so home dwell reports the same camera state.
+# Reads/writes these caller-scope variables directly (not local to this
+# function, shared through Bash dynamic scoping):
+#   cam_id cam_name status_state status_since status_last_post status_slot
+#   status_heartbeat_seconds status_version
+_patrol_status_tick() {
+  local next_state=$1 now=${2:-}
+  [[ -n "$_STATUS_WEBHOOK_URL" ]] || return 0
+  if [[ -z "$now" ]]; then
+    # The Bash builtin gets current time without a date process on each status poll.
+    printf -v now '%(%s)T' -1
+  fi
+  if [[ "$next_state" != "$status_state" ]]; then
+    status_state=$next_state
+    status_since=$now
+  elif (( status_heartbeat_seconds == 0 || now - status_last_post < status_heartbeat_seconds )); then
+    return 0
+  fi
+  api_post_status "$cam_id" "$cam_name" "$status_state" "$status_slot" "$status_since" "$now" "$status_version"
+  status_last_post=$now
+}
+
+# Reads/writes these caller-scope variables directly (not local to this
+# function, shared through Bash dynamic scoping):
+#   status_state
+# Nested status updates share the caller's other status fields.
+_patrol_status_activity() {
+  local active=$1 known=$2 now=${3:-}
+  [[ -n "$_STATUS_WEBHOOK_URL" ]] || return 0
+  if [[ "$known" == "0" && "$status_state" == "unreadable" ]]; then
+    _patrol_status_tick unreadable "$now"
+  elif [[ "$active" == "1" ]]; then
+    _patrol_status_tick holding_activity "$now"
+  else
+    _patrol_status_tick patrolling "$now"
+  fi
+}
+
+# Dynamic scoping lets this helper update the caller's cam_name and protect_name.
 _patrol_refresh_camera_name() {
   [[ -z "${protect_name+x}" ]] && return 0
   if [[ -n "$_LAST_CAM_NAME" && "$_LAST_CAM_NAME" != "$protect_name" ]]; then
@@ -461,6 +552,10 @@ _patrol_refresh_camera_name() {
     cam_name="${protect_name}${id_suffix:+ #$id_suffix}"
   fi
 }
+
+# ---------------------------------------------------------------------------
+# Home-between-cycles dwell
+# ---------------------------------------------------------------------------
 
 # Send the camera to its home position and dwell there for the configured
 # dwell time, polling for motion/tracking and external control exactly like
@@ -496,6 +591,7 @@ _patrol_home_dwell() {
   # Home position has no preset data — establish a stable live baseline after settle.
   expected_pan=-1; expected_tilt=-1; expected_zoom=-1
   last_commanded_slot=-1
+  status_slot=-1
   acquisition_state="acquiring"
   acquisition_streak=0
   goto_retry_count=0
@@ -528,8 +624,10 @@ _patrol_home_dwell() {
       home_unknown_seconds=$(( home_unknown_seconds + hbc_poll ))
       if (( home_unknown_seconds >= 300 )); then
         log "$cam_name" "warn" "Camera unreadable for $(( home_unknown_seconds / 60 ))m during home dwell — holding position (no activity check succeeded)"
+        _patrol_status_tick unreadable
         home_unknown_seconds=0
       fi
+      _patrol_status_activity 1 0
       continue
     fi
 
@@ -591,9 +689,11 @@ _patrol_home_dwell() {
       home_unknown_seconds=$(( home_unknown_seconds + hbc_poll ))
       if (( home_unknown_seconds >= 300 )); then
         log "$cam_name" "warn" "Camera unreadable for $(( home_unknown_seconds / 60 ))m during home dwell — holding position (no activity check succeeded)"
+        _patrol_status_tick unreadable "$now"
         home_unknown_seconds=0
       fi
     fi
+    _patrol_status_activity "$activity_active" "$_LAST_ACTIVITY_KNOWN" "$now"
 
     # Check for external control (pan/tilt/zoom drift).
     # Skip when live auto-tracking is enabled — the camera may have moved to track.
@@ -616,6 +716,7 @@ _patrol_home_dwell() {
           acquisition_state="acquiring"
           acquisition_streak=0
           log "$cam_name" "info" "External control detected during home dwell — holding patrol for ${manual_hold}s"
+          _patrol_status_tick holding_manual "$now"
           home_drift_attempts=0
           home_drift_streak=0
           home_previous_drift=0
@@ -690,6 +791,21 @@ patrol_camera() {
     return
   fi
 
+  local status_state="" status_since=0 status_last_post=0 status_slot=""
+  local status_heartbeat_seconds=300 status_version=""
+  if [[ -n "$_STATUS_WEBHOOK_URL" ]]; then
+    status_heartbeat_seconds=$(jq -r '
+      (if .status_heartbeat_seconds == null then 300 else .status_heartbeat_seconds end) as $v
+      | if ($v | type) == "number" and ($v == 0 or $v >= 30) and ($v | floor) == $v
+        then $v else "invalid" end
+    ' <<< "$cam_config")
+    if [[ "$status_heartbeat_seconds" == "invalid" ]]; then
+      log "$cam_name" "warn" "Invalid status_heartbeat_seconds — using 300"
+      status_heartbeat_seconds=300
+    fi
+    status_version=$(get_install_version)
+  fi
+
   local dwell motion_hold max_wait manual_hold settle_seconds
   dwell=$(echo "$cam_config" | jq -r '.dwell_seconds // 30')
   motion_hold=$(echo "$cam_config" | jq -r '.motion_hold_seconds // 15')
@@ -756,6 +872,10 @@ patrol_camera() {
   # Dynamic auto-tracking: enable tracking on smart detection, disable when clear
   local dyn_tracking
   dyn_tracking=$(echo "$cam_config" | jq -r '.dynamic_auto_tracking // false')
+  local tracking_types_json='["person"]' tracking_types_label=person tracking_with_zoom=null
+  if [[ "$dyn_tracking" == "true" ]]; then
+    _patrol_parse_tracking_config "$cam_config" "$cam_discovery_json" "$cam_name"
+  fi
 
   # Presets: explicit override or auto-discovered
   local -a presets
@@ -851,7 +971,11 @@ patrol_camera() {
   fi
   local dyn_info=""
   if [[ "$dyn_tracking" == "true" ]]; then
-    dyn_info=" dynamic_tracking=on"
+    dyn_info=" dynamic_tracking=on types=$tracking_types_label"
+    case "$tracking_with_zoom" in
+      true) dyn_info+=" zoom=on" ;;
+      false) dyn_info+=" zoom=off" ;;
+    esac
   fi
   local home_cycle_info=""
   if [[ "$home_between_cycles" == "true" ]]; then
@@ -880,7 +1004,7 @@ patrol_camera() {
   # Enable auto-tracking once at patrol start (stays on permanently).
   # Only disabled on schedule pause and shutdown.
   if [[ "$dyn_tracking" == "true" ]]; then
-    if set_auto_tracking "$cam_id" "$cam_name" '["person"]' "enabled"; then
+    if set_auto_tracking "$cam_id" "$cam_name" "$tracking_types_json" "enabled" "$tracking_with_zoom"; then
       tracking_enabled=1
     fi
   fi
@@ -897,6 +1021,7 @@ patrol_camera() {
           api_post_with_retry "/cameras/$cam_id/ptz/goto/-1" 2 3 >/dev/null || true
           home_code="$_LAST_HTTP_CODE"
           if [[ "$home_code" == "200" || "$home_code" == "204" ]]; then
+            status_slot=-1
             log "$cam_name" "info" "Sent to home position"
           else
             log "$cam_name" "warn" "Failed to send to home position (HTTP ${home_code:-timeout})"
@@ -912,6 +1037,7 @@ patrol_camera() {
         acquisition_state="acquiring"
         acquisition_streak=0
       fi
+      _patrol_status_tick paused_schedule
       sleep 60
       continue
     fi
@@ -923,7 +1049,7 @@ patrol_camera() {
       acquisition_streak=0
       # Re-enable auto-tracking after schedule pause
       if [[ "$dyn_tracking" == "true" ]] && (( tracking_enabled == 0 )); then
-        if set_auto_tracking "$cam_id" "$cam_name" '["person"]' "enabled"; then
+        if set_auto_tracking "$cam_id" "$cam_name" "$tracking_types_json" "enabled" "$tracking_with_zoom"; then
           tracking_enabled=1
         fi
       fi
@@ -944,6 +1070,7 @@ patrol_camera() {
     if (( now < external_control_until )); then
       local remaining=$(( external_control_until - now ))
       log "$cam_name" "debug" "Manual control hold — ${remaining}s remaining"
+      _patrol_status_tick holding_manual "$now"
       sleep 5
       continue
     elif (( external_control_until > 0 )); then
@@ -971,8 +1098,10 @@ patrol_camera() {
       unknown_hold_seconds=$(( unknown_hold_seconds + 5 ))
       if (( unknown_hold_seconds >= 300 )); then
         log "$cam_name" "warn" "Camera unreadable for $(( unknown_hold_seconds / 60 ))m — holding position (no activity check succeeded)"
+        _patrol_status_tick unreadable "$now"
         unknown_hold_seconds=0
       fi
+      _patrol_status_activity 1 0 "$now"
       sleep 5
       continue
     fi
@@ -1010,6 +1139,7 @@ patrol_camera() {
           acquisition_state="acquiring"
           acquisition_streak=0
           log "$cam_name" "info" "External control detected — holding patrol for ${manual_hold}s"
+          _patrol_status_tick holding_manual "$now"
           top_drift_attempts=0
           top_drift_streak=0
           top_previous_drift=0
@@ -1060,6 +1190,9 @@ patrol_camera() {
     local waited=0
     # First iteration uses the already-fetched top_state; subsequent iterations
     # fetch fresh state since the camera may have moved during the sleep.
+    if (( activity_active )); then
+      _patrol_status_activity 1 "$_LAST_ACTIVITY_KNOWN" "$now"
+    fi
     while (( activity_active )); do
       top_state=""  # Clear so subsequent iterations fetch fresh state
       if (( waited == 0 )); then
@@ -1078,16 +1211,21 @@ patrol_camera() {
         unknown_hold_seconds=$(( unknown_hold_seconds + 5 ))
         if (( unknown_hold_seconds >= 300 )); then
           log "$cam_name" "warn" "Camera unreadable for $(( unknown_hold_seconds / 60 ))m — holding position (no activity check succeeded)"
+          _patrol_status_tick unreadable
           unknown_hold_seconds=0
         fi
       else
         unknown_hold_seconds=0
       fi
+      _patrol_status_activity "$activity_active" "$_LAST_ACTIVITY_KNOWN"
       if (( activity_active && _LAST_ACTIVITY_KNOWN == 1 && waited >= max_wait )); then
         log "$cam_name" "warn" "Max wait (${max_wait}s) hit — advancing anyway"
         break
       fi
     done
+    if (( activity_active == 0 )); then
+      _patrol_status_tick patrolling
+    fi
     # Dynamic auto-tracking: tracking may have moved the camera, so reset
     # expected position and advance to next preset (don't snap back).
     if [[ "$dyn_tracking" == "true" ]] && (( tracking_enabled == 1 && waited > 0 )); then
@@ -1145,20 +1283,24 @@ patrol_camera() {
         # coordinate system matches directly — no ISP zoom scaling needed.
         IFS=$'\t' read -r expected_pan expected_tilt expected_zoom <<< "$(get_preset_ptz "$preset_positions" "$slot")"
         last_commanded_slot=$slot
+        status_slot=$slot
         goto_retry_count=0
         log "$cam_name" "info" "→ Slot $slot [HTTP $code]"
         ;;
       404)
+        status_slot=""
         log "$cam_name" "error" "Preset slot $slot not found (HTTP 404) — advancing"
         idx=$(( (idx + 1) % ${#presets[@]} ))
         continue
         ;;
       "")
+        status_slot=""
         log "$cam_name" "error" "No response from goto command — advancing"
         idx=$(( (idx + 1) % ${#presets[@]} ))
         continue
         ;;
       *)
+        status_slot=""
         log "$cam_name" "warn" "Unexpected HTTP $code on goto slot $slot"
         ;;
     esac
@@ -1188,8 +1330,10 @@ patrol_camera() {
         dwell_unknown_seconds=$(( dwell_unknown_seconds + poll_iv ))
         if (( dwell_unknown_seconds >= 300 )); then
           log "$cam_name" "warn" "Camera unreadable for $(( dwell_unknown_seconds / 60 ))m during dwell — holding position (no activity check succeeded)"
+          _patrol_status_tick unreadable
           dwell_unknown_seconds=0
         fi
+        _patrol_status_activity 1 0
         continue
       fi
 
@@ -1212,9 +1356,11 @@ patrol_camera() {
         dwell_unknown_seconds=$(( dwell_unknown_seconds + poll_iv ))
         if (( dwell_unknown_seconds >= 300 )); then
           log "$cam_name" "warn" "Camera unreadable for $(( dwell_unknown_seconds / 60 ))m during dwell — holding position (no activity check succeeded)"
+          _patrol_status_tick unreadable
           dwell_unknown_seconds=0
         fi
       fi
+      _patrol_status_activity "$activity_active" "$_LAST_ACTIVITY_KNOWN"
 
       # Check for external control during dwell (pan/tilt/zoom drift via /ptz/position).
       # Skip when live auto-tracking is enabled — the camera may have moved to track a
@@ -1236,6 +1382,7 @@ patrol_camera() {
             acquisition_state="acquiring"
             acquisition_streak=0
             log "$cam_name" "info" "External control detected — holding patrol for ${manual_hold}s"
+            _patrol_status_tick holding_manual
             dwell_drift_attempts=0
             dwell_drift_streak=0
             dwell_previous_drift=0

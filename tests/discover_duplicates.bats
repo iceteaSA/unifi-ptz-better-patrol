@@ -1,3 +1,5 @@
+#!/usr/bin/env bats
+
 load discover_duplicates_helper
 
 @test "duplicate name discovery emits no ids when names are unique" {

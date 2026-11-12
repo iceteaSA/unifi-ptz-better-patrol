@@ -40,7 +40,7 @@ different files** and it is easy to edit the wrong one.
 | `ptz-patrol.sh` | **Sole entrypoint.** systemd `ExecStart`. Discovery, per-camera subshells, shutdown. |
 | `patrol.sh` | Sourced library: `patrol_camera` (the per-camera loop), external-control + schedule logic. |
 | `api.sh` | Sourced base library: auth, HTTP+retry, config, logging, `is_tracking`, PTZ queries. |
-| `discover.sh` | Dual-mode: sourced for `discover_ptz_cameras`, `get_camera_config`, `get_install_version` and the `discover_*` duplicate-name and tracking-line helpers, or run directly as a CLI dump. |
+| `discover.sh` | Dual-mode: source `discover_ptz_cameras`, `get_camera_config`, `get_install_version`, `discover_camera_lines`, `discover_duplicate_names`, `discover_duplicate_name_groups` and `discover_id_suffix`, or run directly as a CLI dump. |
 
 ```
 ptz-patrol.sh -> api.sh, patrol.sh
@@ -60,6 +60,8 @@ discover.sh   -> api.sh
   `uninstall.sh` + the unit file. Adding a new device script means editing that loop and the
   file list in `.github/scripts/release-assets.sh`.
 - `/data/ptz-patrol/install-info` records the install ref, commit, and UTC install time.
+- `PTZ_PATROL_VERSION` in `discover.sh` uses release-please `extra-files` updates.
+  `tests/install_version.bats` checks it against `VERSION`.
 
 ## Platform constraints
 
@@ -76,6 +78,8 @@ discover.sh   -> api.sh
   day names) exist on purpose in the schedule code.
 - `install.sh` writes `/data/on_boot.d/10-ptz-patrol.sh` so a firmware update (which wipes
   `/etc` and apt packages) re-bootstraps via `install.sh --bootstrap`.
+- `ptz-patrol.service` unsets proxy environment settings to prevent proxy exposure of
+  webhook and NVR traffic.
 
 ## UniFi Protect API notes
 
@@ -91,10 +95,13 @@ discover.sh   -> api.sh
   must come from `GET /cameras/{id}/ptz/preset`.
 - `POST /cameras/{id}/ptz/goto/{slot}` returns **200 *or* 204** — treat both as success; 404
   means the slot doesn't exist. **`goto/-1` is the home sentinel**, not a real preset.
-- Only `api_patch` sends a request body (`Content-Type: application/json`). `api_post` is a
-  bare bodyless POST. `PATCH /cameras/{id}` is used to set
-  `smartDetectSettings.autoTrackingObjectTypes` (`["person"]` on, `[]` off) and to null out
-  `ptz.returnHomeAfterInactivityMs` (the camera's built-in return-home fights the patrol).
+- `api_patch` sends a JSON request body (`Content-Type: application/json`).
+  `api_post` sends a bodyless Protect POST.
+- `PATCH /cameras/{id}` sets `smartDetectSettings.autoTrackingObjectTypes` to configured
+  types on enable or `[]` on disable.
+  Optional `smartDetectSettings.autoTrackingWithZoom` applies only on enable.
+- PATCH nulls `ptz.returnHomeAfterInactivityMs` so camera-initiated home moves do not
+  conflict with patrol.
 - Auto-tracking flag naming is firmware-dependent — `is_tracking` tolerates
   `.isAutoTracking // .isPtzAutoTracking // .isTracking`. Keep all three.
 - `/ptz/position` returns `.steps.{pan,tilt,zoom}` in motor steps, the *same* coordinate
@@ -142,6 +149,9 @@ Break these and the camera ends up in a wrong state that nothing corrects.
 `config.json` is **gitignored and holds credentials** — never commit it, never echo it into
 logs. `config.json.example` is the schema and gets copied to `config.json` on install.
 
+- `status_webhook_url` is a secret. Do not log it. `curl` uses `-q` first and `-K -` stdin.
+- `install.sh` sets `config.json` to `0600`. `ptz-patrol.sh` removes group and other access
+  at each start.
 - Merge happens in exactly one place: `get_camera_config` does
   `jq --argjson o "$overrides" '. * $o'` (deep merge, `camera_overrides[id]` wins over `defaults`).
 - Field defaults are applied at read time with jq `//` fallbacks in `patrol_camera`.
@@ -154,7 +164,8 @@ logs. `config.json.example` is the schema and gets copied to `config.json` on in
   Home-between-cycles uses the camera values. `config.json.example` documents this in
   `_note_ptz_settle`.
 - Adding a config field means touching: `config.json.example`, the reader in `patrol.sh`
-  (or `api.sh` for top-level fields), README's Configuration section.
+  (or `api.sh` for top-level fields), `discover.sh`'s effective-config output, and README's
+  Configuration section.
 
 ## Style
 
@@ -168,6 +179,8 @@ logs. `config.json.example` is the schema and gets copied to `config.json` on in
 - Return conventions differ and callers depend on it: `api_get_with_retry` **echoes the body**
   and returns 1 on failure; `api_post_with_retry` **echoes the HTTP code**;
   `api_get`/`api_post`/`api_patch` set the `_LAST_HTTP_CODE` / `_LAST_BODY` globals.
+  `api_post_status` starts a background request and sets `_LAST_STATUS_PID`, without
+  waiting for the request.
 
 ## Contribution workflow
 

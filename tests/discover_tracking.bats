@@ -1,8 +1,10 @@
+#!/usr/bin/env bats
+
 load discover_tracking_helper
 
 @test "tracking output distinguishes G6 and Industrial current state and capability" {
   local cameras='[{"name":"G6 PTZ","featureFlags":{"isPtz":true,"hasLiveviewTracking":true,"supportPtzVehicleTracking":false},"smartDetectSettings":{"autoTrackingObjectTypes":[],"autoTrackingWithZoom":true}},{"name":"Industrial PTZ","featureFlags":{"isPtz":true,"hasLiveviewTracking":true,"supportPtzVehicleTracking":true},"smartDetectSettings":{"autoTrackingObjectTypes":["person","vehicle"],"autoTrackingWithZoom":false}}]'
-  run discover_tracking_lines "$cameras"
+  run discover_camera_lines "$cameras"
   [ "$status" -eq 0 ]
   assert_contains "$output" 'Auto-tracking now: off'
   assert_contains "$output" 'Auto-tracking now: person, vehicle'
@@ -15,7 +17,7 @@ load discover_tracking_helper
 }
 
 @test "tracking capability and zoom report unknown when fields are absent" {
-  run discover_tracking_lines '[{"name":"Unreported","auto_tracking_types":[]}]'
+  run discover_camera_lines '[{"name":"Unreported","auto_tracking_types":[]}]'
   [ "$status" -eq 0 ]
   assert_contains "$output" 'Tracking support: unknown'
   assert_contains "$output" 'Tracking with zoom: unknown'

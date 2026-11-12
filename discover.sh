@@ -62,7 +62,9 @@ discover_ptz_cameras() {
 
 # Print ids of discovered PTZ cameras whose names are shared by another PTZ camera.
 discover_duplicate_names() {
-  jq -r '[.[] | select(.is_ptz == true or ((.type // "") | test("PTZ"; "i")))] as $cams | [$cams[].name] | group_by(.) | map(select(length > 1)) | flatten as $names | $cams[] | select(.name as $n | $names | index($n)) | .id' <<< "$1"
+  local groups
+  groups=$(discover_duplicate_name_groups "$1") || return 1
+  jq -r --argjson groups "$groups" '[$groups[][].id] as $ids | .[] | select(.id as $id | $ids | index($id)) | .id' <<< "$1"
 }
 
 # Print duplicate-name groups for one warning per shared name.
@@ -82,7 +84,7 @@ discover_id_suffix() {
 }
 
 # Format complete per-camera discovery blocks, including tracking state.
-discover_tracking_lines() {
+discover_camera_lines() {
   jq -r '.[] |
     "\n  \(.name)",
     "  Model:            \(.type)",
@@ -111,12 +113,13 @@ get_camera_config() {
 }
 
 # Read installed version metadata without spawning external processes.
+PTZ_PATROL_VERSION="1.2.0" # x-release-please-version
 get_install_version() {
-  local version=unknown ref=unknown commit=unknown dirty=false key value
+  local version=$PTZ_PATROL_VERSION ref=unknown commit=unknown dirty=false key value
   if [[ -r "$SCRIPT_DIR/VERSION" ]]; then
     IFS= read -r version < "$SCRIPT_DIR/VERSION" || true
     version=${version%$'\r'}
-    [[ -n "$version" ]] || version=unknown
+    [[ -n "$version" ]] || version=$PTZ_PATROL_VERSION
   fi
   if [[ -r "$SCRIPT_DIR/install-info" ]]; then
     while IFS='=' read -r key value; do
@@ -153,10 +156,12 @@ if (( count == 0 )); then
 fi
 
 echo "Found $count PTZ camera(s):"
-discover_tracking_lines "$cameras"
+discover_camera_lines "$cameras"
 
 echo ""
 echo "=== Effective config per camera ==="
+webhook_status=off
+[[ -z "$_STATUS_WEBHOOK_URL" ]] || webhook_status=on
 for (( i = 0; i < count; i++ )); do
   cam_id=$(echo "$cameras" | jq -r ".[$i].id")
   cam_name=$(echo "$cameras" | jq -r ".[$i].name")
@@ -172,6 +177,10 @@ for (( i = 0; i < count; i++ )); do
   [[ "$preset_dwell" != "null" ]] || preset_dwell=none
   echo "    preset_dwell_seconds:       $preset_dwell"
   echo "    path_mode:                  $(echo "$cam_config" | jq -r '.path_mode // "loop"')"
+  echo "    auto_tracking_object_types: $(echo "$cam_config" | jq -c 'if .auto_tracking_object_types == null then ["person"] else .auto_tracking_object_types end')"
+  echo "    auto_tracking_with_zoom:    $(echo "$cam_config" | jq -r 'if .auto_tracking_with_zoom == null then "camera setting" else .auto_tracking_with_zoom end')"
+  echo "    status_webhook_url:         $webhook_status"
+  echo "    status_heartbeat_seconds:   $(echo "$cam_config" | jq -r 'if .status_heartbeat_seconds == null then 300 else .status_heartbeat_seconds end')"
   echo "    motion_hold:                $(echo "$cam_config" | jq -r '.motion_hold_seconds // 15')s"
   echo "    max_tracking_wait:          $(echo "$cam_config" | jq -r '.max_tracking_wait // 300')s"
   echo "    manual_control_hold:        $(echo "$cam_config" | jq -r '.manual_control_hold_seconds // 120')s"
