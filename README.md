@@ -299,7 +299,9 @@ The JSON payload has these fields:
 }
 ```
 
-`since` and `ts` are Unix times in seconds, not milliseconds and not ISO text. In Home Assistant, `as_datetime` reads them directly. `since` is the time when the state started, and `ts` is the time of the post. A heartbeat keeps `since` unchanged. `slot` is the last commanded slot. The first post after a start can come before the first preset command, so its `slot` is `null`. This value does not mean that the camera has no presets. Home uses slot `-1`. Shutdown uses `null` and sets `since` to the shutdown time.
+`since` and `ts` are Unix times in seconds, not milliseconds and not ISO text. In Home Assistant, `as_datetime` reads them directly. `since` is the time when the state started, and `ts` is the time of the post. A heartbeat keeps `since` unchanged.
+
+`slot` is the last commanded slot. The first post after a start can come before the first preset command, so its `slot` is `null`. This value does not mean that the camera has no presets. Home uses slot `-1`. Shutdown uses `null` and sets `since` to the shutdown time.
 
 | State | Meaning |
 |-------|---------|
