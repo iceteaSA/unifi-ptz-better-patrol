@@ -39,9 +39,9 @@
     "EXAMPLE_CAMERA_ID_2_HERE": {
       "enabled": true,
       "preset_slots": [0, 4, 2],
-      "_note_path_mode": "pingpong visits the inner slots in reverse after the last slot, without repeating either endpoint. The default is loop.",
+      "_note_path_mode": "pingpong uses the inner slots in the opposite order after the last slot. The path uses each endpoint one time. The default is loop.",
       "path_mode": "pingpong",
-      "_note_preset_dwell": "Per-slot seconds; other slots and home use dwell_seconds. Settle and poll intervals follow each slot dwell.",
+      "_note_preset_dwell": "Dwell seconds for each slot. Other slots and home use dwell_seconds. Settle and poll intervals use each slot dwell.",
       "preset_dwell_seconds": {"4": 45, "2": 15},
       "schedule": {
         "start": "08:00",

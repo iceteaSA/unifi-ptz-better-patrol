@@ -133,8 +133,8 @@ Edit `/data/ptz-patrol/config.json`:
 | `rediscovery_interval_seconds` | `600` | Re-discover cameras periodically (seconds); `0` to disable |
 | `log_level` | `info` | Log verbosity: `error`, `warn`, `info`, `debug` |
 | `defaults.dwell_seconds` | `30` | Time at each preset before advancing |
-| `defaults.preset_dwell_seconds` | `{}` | Per-slot dwell seconds, for example `{"4": 45, "2": 15}`. Other slots use `dwell_seconds`. |
-| `defaults.path_mode` | `"loop"` | `"loop"` repeats the preset list. `"pingpong"` returns through the inner slots before it repeats. |
+| `defaults.preset_dwell_seconds` | `{}` | Dwell seconds for each slot. Other slots use `dwell_seconds`. |
+| `defaults.path_mode` | `"loop"` | `"loop"` uses the preset list again. `"pingpong"` uses the inner slots in the opposite order before the next cycle. |
 | `defaults.motion_hold_seconds` | `15` | Hold time after motion/smart detection |
 | `defaults.max_tracking_wait` | `300` | Max seconds to wait during active tracking |
 | `defaults.manual_control_hold_seconds` | `120` | Backoff time after manual PTZ control detected |
@@ -147,13 +147,19 @@ Edit `/data/ptz-patrol/config.json`:
 
 Add entries under `camera_overrides` keyed by camera ID. Any field from `defaults` can be overridden. Set `"enabled": false` to skip a camera. Use `"preset_slots": [0, 1, 3]` to patrol specific presets instead of all discovered ones.
 
-Set `preset_dwell_seconds` in `defaults` or a camera override. Each key is a preset slot string. Each value must be an integer of at least 1, or a string of digits for that integer. Invalid entries and slots outside the patrol list log warnings and are ignored.
+Set `preset_dwell_seconds` in `defaults` or a camera override. Each key is a preset slot string. Each value must be a positive integer, or a string of digits for that integer. Patrol logs a warning and ignores invalid entries and slots not in the patrol list.
 
-For each slot, the settle window is the configured `ptz_settle_seconds`, limited to half that slot's dwell (minimum 1 second). The poll interval is one third of that dwell, limited to 2 through 5 seconds. Home-between-cycles uses the camera's `dwell_seconds`, settle window, and poll interval.
+For example, `{"4": 45, "2": 15}` sets 45 seconds for slot 4 and 15 seconds for slot 2.
 
-Protect can return the camera to its HomeView after auto-tracking. When an acquired position drifts, patrol reads `/cameras/{id}/ptz/home` with one attempt. If all live axes match HomeView (pan and tilt within 200 steps, zoom within 30), patrol does not start a manual-control hold. It stops position checks for the rest of that dwell and continues at the next preset. A failed or invalid HomeView read keeps the existing drift rules. Pressing Home in the Protect app is also treated as camera-initiated, so that action does not start a manual-control hold.
+For each slot, the settle window uses `ptz_settle_seconds`. Its maximum is half that slot's dwell (minimum 1 second). The poll interval is one third of that dwell. Its minimum is 2 seconds and its maximum is 5 seconds. Home-between-cycles uses the camera's `dwell_seconds`, settle window, and poll interval.
 
-Set `path_mode` to `"pingpong"` in `defaults` or a camera override to use both directions. For example, `[0, 1, 2, 3]` becomes `[0, 1, 2, 3, 2, 1]`. The endpoints do not repeat. Two slots keep their original order. Other values log a warning and use `"loop"`. With `home_between_cycles`, the camera visits home after the return leg, before the index returns to the first slot.
+Protect can send the camera to its HomeView after auto-tracking. If the camera drifts after target acquisition, patrol reads `/cameras/{id}/ptz/home` one time. The maximum difference from HomeView is 200 pan/tilt steps and 30 zoom steps. This maximum applies to each axis.
+
+Patrol then skips the manual-control hold and stops position checks until the next goto. If patrol cannot read HomeView, or its data is invalid, the usual drift rules apply. Patrol also skips this hold when you push Home in the Protect app: it counts as camera-initiated movement.
+
+Set `path_mode` to `"pingpong"` in `defaults` or a camera override to use the two directions. For example, `[0, 1, 2, 3]` becomes `[0, 1, 2, 3, 2, 1]`. The path does not duplicate its endpoints. Two slots keep their initial order. Other values log a warning and use `"loop"`.
+
+With `home_between_cycles`, the camera goes home after it completes the full path, before the next cycle starts.
 
 > **Tip**: Run `bash /data/ptz-patrol/discover.sh` to see all discovered cameras, their IDs, presets, zoom positions, and effective config.
 
@@ -257,7 +263,8 @@ This is per-camera configurable — you can enable it on specific cameras via `c
 
 Log format: `[timestamp] [LEVEL] [tag] message`
 
-The tag uses the camera name from Protect. Cameras with the same name add the last six camera ID characters: `Driveway #abc123`. The suffix stays on the tag when the camera is renamed. Each poll uses the name from the camera state response. A changed name logs one info line, then later lines use the new name. An empty or unreadable name does not change the tag.
+The tag uses the camera name from Protect. Cameras with the same name add the last six camera ID characters: `Driveway #abc123`. The tag keeps this suffix after a name change. Each poll uses the name from the camera state response. A name change logs one info line, then subsequent lines use the new name. An empty or unreadable name does not change the tag.
+
 ```log
 [2026-03-10 12:00:00] [ERROR] [api] Auth failed
 [2026-03-10 12:00:10] [WARN] [api] Auth attempt 1/5 failed — retrying in 10s
@@ -326,8 +333,8 @@ The Protect API doesn't expose a "camera is being controlled" flag. Detection us
 
 1. After each `goto`, the patrol waits for the settle window (`ptz_settle_seconds`) to let the motor reach its target. Motor-induced motion during this window is filtered out to prevent false triggers.
 2. During the dwell period, the patrol polls at adaptive intervals (`min(5, dwell/3)` seconds, 2s floor) and compares the live pan/tilt/zoom position against the expected preset values.
-3. After two consecutive reads acquire the target, drift beyond a threshold (pan: 200 steps, tilt: 200 steps, zoom: 30 steps) starts a confirmation check. A position at HomeView is not manual control. The camera finishes its dwell without more position checks.
-4. Other drift must persist across two polls before the patrol enters a hold for `manual_control_hold_seconds`. A failed HomeView read keeps this confirmation rule.
+3. Patrol first checks two position reads at the target, one after the other. Then drift above a threshold starts a confirmation check (pan: 200 steps, tilt: 200 steps, zoom: 30 steps). A position at HomeView is not manual control. The camera completes its dwell without more position checks.
+4. Other drift must continue for two polls before patrol starts a hold for `manual_control_hold_seconds`. If patrol cannot read HomeView, the same confirmation rule applies.
 5. For the home position (which has no preset data), the live position is sampled after the settle window as the baseline.
 
 This catches manual control on **all three axes** — pan, tilt, and zoom — including control from the Protect app, which doesn't trigger `isMotionDetected` for pan/tilt moves. No additional hardware or Home Assistant integration required.
