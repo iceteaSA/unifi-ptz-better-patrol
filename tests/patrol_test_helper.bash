@@ -90,6 +90,11 @@ api_get_camera_state() {
   return 0
 }
 
+api_get() {
+  _LAST_HTTP_CODE=503
+  _LAST_BODY=""
+}
+
 sleep() {
   if [[ -n "$PATROL_MODE" ]]; then
     PATROL_SLEEP_COUNT=$(( PATROL_SLEEP_COUNT + 1 ))

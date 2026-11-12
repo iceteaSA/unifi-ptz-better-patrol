@@ -6,6 +6,8 @@ REPO_OWNER="iceteaSA"
 REPO_NAME="unifi-ptz-better-patrol"
 BRANCH="${PTZ_PATROL_BRANCH:-main}"
 BASE_URL="https://raw.githubusercontent.com/$REPO_OWNER/$REPO_NAME/$BRANCH"
+INSTALL_COMMIT=unknown
+INSTALL_DIRTY=""
 
 if [[ "$BRANCH" != "main" ]]; then
     echo "WARNING: Installing unverified code from branch '$BRANCH' fetched directly from GitHub."
@@ -82,6 +84,11 @@ if [ "$(realpath "$SCRIPT_DIR")" = "$(realpath "$INSTALL_DIR")" ]; then
     INSTALLER_IS_INSTALLED=true
 fi
 
+LOCAL_CHECKOUT=false
+if [[ "$INSTALLER_IS_INSTALLED" == false && -f "$SCRIPT_DIR/install.sh" && -f "$SCRIPT_DIR/api.sh" && -f "$SCRIPT_DIR/discover.sh" && -f "$SCRIPT_DIR/patrol.sh" && -f "$SCRIPT_DIR/ptz-patrol.sh" ]]; then
+    LOCAL_CHECKOUT=true
+fi
+
 # Create install directory
 mkdir -p "$INSTALL_DIR" || {
     echo "Error: Failed to create directory $INSTALL_DIR"
@@ -142,6 +149,36 @@ if [[ "${1:-}" == "--bootstrap" ]]; then
     exit 0
 fi
 
+# Resolve a normal install only after bootstrap exits; this pins every remote
+# download to one commit without changing bootstrap's offline behavior.
+if [[ "$LOCAL_CHECKOUT" == true ]]; then
+    if command -v git >/dev/null 2>&1; then
+        if INSTALL_COMMIT=$(git -C "$SCRIPT_DIR" rev-parse HEAD 2>/dev/null) && [[ "$INSTALL_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+            if local_status=$(git -C "$SCRIPT_DIR" status --porcelain 2>/dev/null); then
+                if [[ -n "$local_status" ]]; then
+                    INSTALL_DIRTY=true
+                else
+                    INSTALL_DIRTY=false
+                fi
+            fi
+        else
+            INSTALL_COMMIT=unknown
+            echo "WARNING: Could not read a valid commit from the local checkout; install commit is unknown."
+        fi
+    fi
+    if ! command -v git >/dev/null 2>&1; then
+        echo "WARNING: Git is unavailable in the local checkout; install commit is unknown."
+    fi
+else
+    resolved_commit=$(curl -fsSL --max-time 10 -H 'Accept: application/vnd.github.sha' "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/commits/$BRANCH" 2>/dev/null) || resolved_commit=
+    if [[ "$resolved_commit" =~ ^[0-9a-f]{40}$ ]]; then
+        INSTALL_COMMIT=$resolved_commit
+        BASE_URL="https://raw.githubusercontent.com/$REPO_OWNER/$REPO_NAME/$INSTALL_COMMIT"
+    else
+        echo "WARNING: Could not resolve branch '$BRANCH' to a commit; downloading from branch URL."
+    fi
+fi
+
 echo "=== PTZ Patrol Installer ==="
 install_deps
 
@@ -150,6 +187,8 @@ for f in install.sh api.sh discover.sh patrol.sh ptz-patrol.sh; do
     get_file "$f" "$INSTALL_DIR/$f"
     chmod +x "$INSTALL_DIR/$f"
 done
+get_file "VERSION" "$INSTALL_DIR/VERSION"
+chmod 0644 "$INSTALL_DIR/VERSION"
 
 # Install uninstall script
 get_file "uninstall.sh" "$INSTALL_DIR/uninstall.sh"
@@ -219,6 +258,19 @@ systemctl restart ptz-patrol 2>/dev/null || true
 BOOT
 chmod +x "$ONBOOT_SCRIPT"
 echo "on_boot.d hook installed"
+
+# Record the deployed files after all deploy steps and before the service
+# starts, so the daemon's startup log reports this install, not the previous one.
+install_ref=$BRANCH
+if [[ "$LOCAL_CHECKOUT" == true ]]; then
+    install_ref=local
+fi
+install_info_tmp="$INSTALL_DIR/install-info.tmp.$$"
+printf 'ref=%s\ncommit=%s\ninstalled_at=%s\n' "$install_ref" "$INSTALL_COMMIT" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$install_info_tmp"
+if [[ -n "$INSTALL_DIRTY" ]]; then
+    printf 'dirty=%s\n' "$INSTALL_DIRTY" >> "$install_info_tmp"
+fi
+mv "$install_info_tmp" "$INSTALL_DIR/install-info"
 
 # Smart service management
 if systemctl is-active --quiet "$SERVICE_NAME.service"; then

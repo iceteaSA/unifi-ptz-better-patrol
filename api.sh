@@ -332,6 +332,7 @@ api_get_camera_state() {
 _LAST_SMART_ACTIVE=0
 _LAST_TRACKING_ACTIVE=1
 _LAST_ACTIVITY_KNOWN=0
+_LAST_CAM_NAME=""
 
 is_tracking() {
   local cam_id=$1 motion_hold=$2
@@ -341,6 +342,7 @@ is_tracking() {
   _LAST_SMART_ACTIVE=0
   _LAST_TRACKING_ACTIVE=1
   _LAST_ACTIVITY_KNOWN=0
+  _LAST_CAM_NAME=""
 
   if [[ -z "$state" ]]; then
     if ! api_get_with_retry "/cameras/$cam_id" 2 3 >/dev/null; then
@@ -359,20 +361,22 @@ is_tracking() {
     (.isSmartDetected // false),
     (if ([.smartDetectSettings.autoTrackingObjectTypes[]?] | length) > 0 then "1" else "0" end),
     (.isMotionDetected // false),
-    (.lastMotion // 0)
+    (.lastMotion // 0),
+    (.name // "")
   ] | @tsv' 2>/dev/null) || {
     log "$cam_id" "warn" "Invalid camera state response — assuming active (fail-safe)"
     return 0
   }
 
-  local response_id_present cam_state tracking smart_detected tracking_capable motion_detected last_motion
-  IFS=$'\t' read -r response_id_present cam_state tracking smart_detected tracking_capable motion_detected last_motion <<< "$fields"
+  local response_id_present cam_state tracking smart_detected tracking_capable motion_detected last_motion camera_name
+  IFS=$'\t' read -r response_id_present cam_state tracking smart_detected tracking_capable motion_detected last_motion camera_name <<< "$fields"
 
   # An absent id makes the response unusable even when jq supplied defaults.
   if [[ "$response_id_present" != "1" ]]; then
     log "$cam_id" "warn" "Invalid camera state response — assuming active (fail-safe)"
     return 0
   fi
+  _LAST_CAM_NAME=$camera_name
 
   # Check camera is still connected
   if [[ "$cam_state" != "CONNECTED" ]]; then

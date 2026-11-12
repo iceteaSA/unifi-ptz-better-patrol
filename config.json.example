@@ -12,7 +12,7 @@
     "motion_hold_seconds": 15,
     "max_tracking_wait": 300,
     "manual_control_hold_seconds": 120,
-    "_note_ptz_settle": "ptz_settle_seconds is auto-clamped to at most dwell_seconds/2 at startup",
+    "_note_ptz_settle": "At startup, settle uses min(ptz_settle_seconds, max(1, dwell_seconds/2)). After each goto with HTTP 200 or 204, recompute settle from that slot's preset_dwell_seconds or dwell_seconds. Poll uses slot_dwell/3 with minimum 2 and maximum 5 seconds. Home-between-cycles uses the camera dwell, settle, and poll values.",
     "ptz_settle_seconds": 10,
     "home_on_shutdown": false,
     "home_between_cycles": false,
@@ -39,6 +39,10 @@
     "EXAMPLE_CAMERA_ID_2_HERE": {
       "enabled": true,
       "preset_slots": [0, 4, 2],
+      "_note_path_mode": "pingpong uses the inner slots in the opposite order after the last slot. The path uses each endpoint one time. The default is loop.",
+      "path_mode": "pingpong",
+      "_note_preset_dwell": "Dwell seconds for each slot. Other slots and home use dwell_seconds. Settle and poll intervals use each slot dwell.",
+      "preset_dwell_seconds": {"4": 45, "2": 15},
       "schedule": {
         "start": "08:00",
         "end": "20:00",

@@ -72,7 +72,9 @@ PTZ_PATROL_BRANCH=dev curl -sSL https://raw.githubusercontent.com/iceteaSA/unifi
 
 ### Security
 
-The installer is the trust root. It is fetched from GitHub over HTTPS with certificate validation, then downloads the files systemd will run as root. Read `install.sh` before piping it to `bash` if you want to verify what it does. Branch installs are fetched directly from that branch and bypass even the implicit review that `main` receives; the installer prints a warning, but does not verify branch contents with a checksum or signature.
+The installer is the trust root. It is fetched from GitHub over HTTPS with certificate validation, then downloads the files systemd will run as root. Read `install.sh` before piping it to `bash` if you want to verify what it does. Remote installs resolve the selected branch to a commit before downloading. Every file then comes from that commit. If GitHub's API cannot resolve the branch, the installer prints a warning and falls back to the branch URL. Local-checkout installs record the checkout's commit when Git is available.
+
+The installer writes `/data/ptz-patrol/install-info` with `ref`, `commit`, and UTC `installed_at` values. The daemon logs its version and commit at startup, for example `ptz-patrol 1.1.0 (main@c61700a) starting`. The `discover.sh` output header prints the same version string. Bootstrap does not change this metadata.
 
 ### Manual Installation
 
@@ -133,6 +135,8 @@ Edit `/data/ptz-patrol/config.json`:
 | `rediscovery_interval_seconds` | `600` | Re-discover cameras periodically (seconds); `0` to disable |
 | `log_level` | `info` | Log verbosity: `error`, `warn`, `info`, `debug` |
 | `defaults.dwell_seconds` | `30` | Time at each preset before advancing |
+| `defaults.preset_dwell_seconds` | `{}` | Dwell seconds for each slot. Other slots use `dwell_seconds`. |
+| `defaults.path_mode` | `"loop"` | `"loop"` uses the preset list again. `"pingpong"` uses the inner slots in the opposite order before the next cycle. |
 | `defaults.motion_hold_seconds` | `15` | Hold time after motion/smart detection |
 | `defaults.max_tracking_wait` | `300` | Max seconds to wait during active tracking |
 | `defaults.manual_control_hold_seconds` | `120` | Backoff time after manual PTZ control detected |
@@ -144,6 +148,20 @@ Edit `/data/ptz-patrol/config.json`:
 ### Per-Camera Overrides
 
 Add entries under `camera_overrides` keyed by camera ID. Any field from `defaults` can be overridden. Set `"enabled": false` to skip a camera. Use `"preset_slots": [0, 1, 3]` to patrol specific presets instead of all discovered ones.
+
+Set `preset_dwell_seconds` in `defaults` or a camera override. Each key is a preset slot string. Each value must be a positive integer, or a string of digits for that integer. Patrol logs a warning and ignores invalid entries and slots not in the patrol list.
+
+For example, `{"4": 45, "2": 15}` sets 45 seconds for slot 4 and 15 seconds for slot 2.
+
+For each slot, the settle window uses `ptz_settle_seconds`. Its maximum is half that slot's dwell (minimum 1 second). The poll interval is one third of that dwell. Its minimum is 2 seconds and its maximum is 5 seconds. Home-between-cycles uses the camera's `dwell_seconds`, settle window, and poll interval.
+
+Protect can send the camera to its HomeView after auto-tracking. For each drift check after target acquisition, patrol reads `/cameras/{id}/ptz/home` one time. The maximum difference from HomeView is 200 pan/tilt steps and 30 zoom steps. This maximum applies to each axis.
+
+Patrol then skips the manual-control hold and stops position checks until the next goto. If patrol cannot read HomeView, or its data is invalid, the usual drift rules apply. Patrol also skips this hold when you push Home in the Protect app: it counts as camera-initiated movement.
+
+Set `path_mode` to `"pingpong"` in `defaults` or a camera override to use the two directions. For example, `[0, 1, 2, 3]` becomes `[0, 1, 2, 3, 2, 1]`. The path does not duplicate its endpoints. Two slots keep their initial order. Other values log a warning and use `"loop"`.
+
+With `home_between_cycles`, the camera goes home after it completes the full path, before the next cycle starts.
 
 > **Tip**: Run `bash /data/ptz-patrol/discover.sh` to see all discovered cameras, their IDs, presets, zoom positions, and effective config.
 
@@ -246,11 +264,20 @@ This is per-camera configurable — you can enable it on specific cameras via `c
 | `debug` | Everything (retry details, hold countdowns, motion clear) | Troubleshooting only |
 
 Log format: `[timestamp] [LEVEL] [tag] message`
+
+The tag uses the camera name from Protect. Cameras with the same name add the last six camera ID characters: `Driveway #abc123`. The tag keeps this suffix after a name change. Each poll uses the name from the camera state response. A name change logs one info line, then subsequent lines use the new name. An empty or unreadable name does not change the tag.
+
 ```log
 [2026-03-10 12:00:00] [ERROR] [api] Auth failed
 [2026-03-10 12:00:10] [WARN] [api] Auth attempt 1/5 failed — retrying in 10s
 [2026-03-10 12:00:20] [INFO] [api] Authenticated
 [2026-03-10 12:00:20] [DEBUG] [api] GET /cameras returned HTTP 200 (attempt 1/3)
+[2026-03-10 12:00:20] [INFO] [Driveway #abc123] Patrol: presets=[0 4 2] dwell=30s settle=10s poll=5s hold=15s max_wait=300s manual_hold=120s preset_dwell=4:45,2:15
+[2026-03-10 12:00:20] [INFO] [Garden] Patrol: presets=[0 1 2 3 2 1] dwell=30s settle=10s poll=5s hold=15s max_wait=300s manual_hold=120s path=pingpong
+[2026-03-10 12:00:25] [INFO] [Driveway #abc123] Camera renamed in Protect: 'Driveway' → 'Gate'
+[2026-03-10 12:00:30] [INFO] [Gate #abc123] → Slot 4 [HTTP 200]
+[2026-03-10 12:00:45] [INFO] [Gate #abc123] PTZ drift detected: pan(11127→10880) tilt(10412→11430) zoom(710→0)
+[2026-03-10 12:00:45] [INFO] [Gate #abc123] Camera returned to its HomeView — not manual control
 ```
 
 ## Operational Overview
@@ -308,8 +335,8 @@ The Protect API doesn't expose a "camera is being controlled" flag. Detection us
 
 1. After each `goto`, the patrol waits for the settle window (`ptz_settle_seconds`) to let the motor reach its target. Motor-induced motion during this window is filtered out to prevent false triggers.
 2. During the dwell period, the patrol polls at adaptive intervals (`min(5, dwell/3)` seconds, 2s floor) and compares the live pan/tilt/zoom position against the expected preset values.
-3. If any axis drifts beyond the threshold (pan: 200 steps, tilt: 200 steps, zoom: 30 steps), manual control is detected.
-4. The patrol enters a hold state for `manual_control_hold_seconds` before resuming.
+3. Patrol first checks two position reads at the target, one after the other. Then drift above a threshold starts a confirmation check (pan: 200 steps, tilt: 200 steps, zoom: 30 steps). A position at HomeView is not manual control. The camera completes its dwell without more position checks.
+4. Other drift must continue for two polls before patrol starts a hold for `manual_control_hold_seconds`. If patrol cannot read HomeView, the same confirmation rule applies.
 5. For the home position (which has no preset data), the live position is sampled after the settle window as the baseline.
 
 This catches manual control on **all three axes** — pan, tilt, and zoom — including control from the Protect app, which doesn't trigger `isMotionDetected` for pan/tilt moves. No additional hardware or Home Assistant integration required.
@@ -357,6 +384,7 @@ Key operational signals:
 
 ```log
 # Discovery
+[2026-03-10 12:00:00] [INFO] [main] ptz-patrol 1.1.0 (main@c61700a) starting
 [2026-03-10 12:00:00] [INFO] [main] Discovering PTZ cameras...
 [2026-03-10 12:00:01] [INFO] [main] Found 3 PTZ camera(s) — launching patrol loops
 
@@ -451,6 +479,16 @@ bash /data/ptz-patrol/discover.sh
 
 # Full Removal
 /data/ptz-patrol/uninstall.sh
+```
+
+The discovery header reports the installed version and commit. Each camera block shows current auto-tracking object types separately from tracking support and the camera's tracking-with-zoom setting. For example:
+
+```text
+  G6 PTZ
+  PTZ (firmware):   true
+  Auto-tracking now: off
+  Tracking support: person
+  Tracking with zoom: on
 ```
 
 ## Project Structure

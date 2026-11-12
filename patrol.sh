@@ -39,6 +39,7 @@ is_externally_controlled() {
   local acquisition_streak=${9:-0}
   _LAST_DRIFT_MAGNITUDE=0
   _LAST_GOTO_FAILED=0
+  _LAST_AT_HOMEVIEW=0
   _LAST_ACQUISITION_STATE=$acquisition_state
   _LAST_ACQUISITION_STREAK=$acquisition_streak
 
@@ -122,6 +123,24 @@ is_externally_controlled() {
 
   if [[ -n "$drifted" ]]; then
     log "$cam_name" "info" "PTZ drift detected: ${drifted}"
+    local home_fields="" home_pan home_tilt home_zoom
+    api_get "/cameras/$cam_id/ptz/home" >/dev/null || true
+    if [[ "$_LAST_HTTP_CODE" == "200" ]]; then
+      home_fields=$(printf '%s' "$_LAST_BODY" | jq -r '
+        [.ptz.pan // -1, .ptz.tilt // -1, .ptz.zoom // -1] | @tsv
+      ' 2>/dev/null) || home_fields=""
+      IFS=$'\t' read -r home_pan home_tilt home_zoom <<< "$home_fields"
+      if [[ "$home_pan" =~ ^[0-9]+$ && "$home_tilt" =~ ^[0-9]+$ && "$home_zoom" =~ ^[0-9]+$ ]]; then
+        pan_diff=$(( live_pan - home_pan )); pan_diff=${pan_diff#-}
+        tilt_diff=$(( live_tilt - home_tilt )); tilt_diff=${tilt_diff#-}
+        zoom_diff=$(( live_zoom - home_zoom )); zoom_diff=${zoom_diff#-}
+        if (( pan_diff <= pan_thresh && tilt_diff <= tilt_thresh && zoom_diff <= zoom_thresh )); then
+          log "$cam_name" "info" "Camera returned to its HomeView — not manual control"
+          _LAST_AT_HOMEVIEW=1
+          return 1
+        fi
+      fi
+    fi
     return 0
   fi
 
@@ -433,6 +452,16 @@ set_auto_tracking() {
 # Home-between-cycles dwell
 # ---------------------------------------------------------------------------
 
+# The patrol owns these caller-scoped names, including during home dwell.
+_patrol_refresh_camera_name() {
+  [[ -z "${protect_name+x}" ]] && return 0
+  if [[ -n "$_LAST_CAM_NAME" && "$_LAST_CAM_NAME" != "$protect_name" ]]; then
+    log "$cam_name" "info" "Camera renamed in Protect: '$protect_name' → '$_LAST_CAM_NAME'"
+    protect_name=$_LAST_CAM_NAME
+    cam_name="${protect_name}${id_suffix:+ #$id_suffix}"
+  fi
+}
+
 # Send the camera to its home position and dwell there for the configured
 # dwell time, polling for motion/tracking and external control exactly like
 # a normal preset dwell.
@@ -444,12 +473,13 @@ set_auto_tracking() {
 # function, shared via bash dynamic scoping):
 #   last_goto_ts expected_pan expected_tilt expected_zoom
 #   acquisition_state acquisition_streak
-#   tracking_enabled external_control_until
+#   tracking_enabled external_control_until cam_name protect_name
 #
 # Returns 0 if dwell completed normally, 1 if interrupted (caller should
 # continue back to the top of the main patrol loop).
 _patrol_home_dwell() {
-  local cam_id=$1 cam_name=$2 dwell=$3 motion_hold=$4 settle_seconds=$5
+  local cam_id=$1 dwell=$3 motion_hold=$4 settle_seconds=$5
+  cam_name=$2
   local manual_hold=$6 dyn_tracking=$7 poll_iv_s=${8:-5}
 
   local hbc_code
@@ -548,6 +578,7 @@ _patrol_home_dwell() {
     if is_tracking "$cam_id" "$motion_hold" "$last_goto_ts" "$settle_seconds" "$cam_state"; then
       activity_active=1
     fi
+    _patrol_refresh_camera_name
     if (( _LAST_TRACKING_ACTIVE == 1 )); then
       expected_pan=-1; expected_tilt=-1; expected_zoom=-1
       acquisition_state="acquiring"
@@ -572,6 +603,11 @@ _patrol_home_dwell() {
       external_controlled=$?
       acquisition_state="$_LAST_ACQUISITION_STATE"
       acquisition_streak=$_LAST_ACQUISITION_STREAK
+      if (( _LAST_AT_HOMEVIEW == 1 )); then
+        expected_pan=-1; expected_tilt=-1; expected_zoom=-1
+        acquisition_state="none"
+        acquisition_streak=0
+      fi
       if (( external_controlled == 0 )); then
         # Retain at least 75% of the previous drift. A ratio handles pan/tilt
         # and zoom's different motor-step scales while rejecting convergence.
@@ -635,8 +671,11 @@ _patrol_home_dwell() {
 # ---------------------------------------------------------------------------
 
 # Resolve settings and preset list, then loop forever
+# Arguments: cam_id cam_name cam_discovery_json [id_suffix]
 patrol_camera() {
   local cam_id=$1 cam_name=$2
+  local protect_name=$cam_name id_suffix=${4:-}
+  cam_name="${protect_name}${id_suffix:+ #$id_suffix}"
   # Optional: pre-fetched camera JSON from discovery (3rd arg)
   local cam_discovery_json=${3:-}
 
@@ -657,6 +696,7 @@ patrol_camera() {
   max_wait=$(echo "$cam_config" | jq -r '.max_tracking_wait // 300')
   manual_hold=$(echo "$cam_config" | jq -r '.manual_control_hold_seconds // 120')
   settle_seconds=$(echo "$cam_config" | jq -r '.ptz_settle_seconds // 10')
+  local configured_settle_seconds=$settle_seconds
 
   # --- Sanity-clamp timing relationships ---
   # Settle must be less than dwell so there are detection windows during dwell.
@@ -677,6 +717,18 @@ patrol_camera() {
   local poll_interval_s=$(( dwell / 3 ))
   (( poll_interval_s > 5 )) && poll_interval_s=5
   (( poll_interval_s < 2 )) && poll_interval_s=2
+  local camera_settle_seconds=$settle_seconds camera_poll_interval_s=$poll_interval_s
+  local slot_dwell=$dwell
+  local path_mode path_info=""
+  path_mode=$(printf '%s' "$cam_config" | jq -r 'if .path_mode == null then "loop" else .path_mode end')
+  case "$path_mode" in
+    loop) ;;
+    pingpong) path_info=" path=pingpong" ;;
+    *)
+      log "$cam_name" "warn" "Invalid path_mode '$path_mode' — using loop"
+      path_mode="loop"
+      ;;
+  esac
 
   # Schedule: optional time window for when patrol should be active
   local sched_start sched_end sched_days sched_constrain_start_minute sched_constrain_end_minute sched_home
@@ -729,6 +781,48 @@ patrol_camera() {
     ')
   fi
 
+  local -A preset_dwells=()
+  local preset_dwell_info="" dwell_key dwell_value dwell_valid dwell_normalized patrol_slot slot_found
+  while IFS=$'\t' read -r dwell_key dwell_value dwell_valid dwell_normalized; do
+    dwell_key=${dwell_key#K:}
+    if [[ "$dwell_valid" != "1" ]]; then
+      log "$cam_name" "warn" "Invalid preset_dwell_seconds entry ${dwell_key}=${dwell_value} — ignoring"
+      continue
+    fi
+    slot_found=0
+    for patrol_slot in "${presets[@]}"; do
+      [[ "$dwell_key" == "$patrol_slot" ]] && slot_found=1
+    done
+    if (( slot_found == 0 )); then
+      log "$cam_name" "warn" "Unknown patrol slot in preset_dwell_seconds: ${dwell_key}=${dwell_value} — ignoring"
+      continue
+    fi
+    preset_dwells["$dwell_key"]=$dwell_normalized
+    if [[ -z "$preset_dwell_info" ]]; then
+      preset_dwell_info=" preset_dwell=${dwell_key}:${dwell_normalized}"
+    else
+      preset_dwell_info+=",${dwell_key}:${dwell_normalized}"
+    fi
+  done < <(printf '%s' "$cam_config" | jq -r '
+    (.preset_dwell_seconds // {}) | if type == "object" then
+      to_entries[] | .value as $v
+      | (if (.key | test("^[0-9]+$")) and
+          (($v | type) == "number" or ($v | type) == "string") and
+          ($v | tostring | test("^[0-9]+$")) and
+          ($v | tonumber) >= 1
+         then "1" else "0" end) as $valid
+      | [("K:" + .key), ($v | tojson), $valid,
+         (if $valid == "1" then ($v | tostring | sub("^0+"; "")) else "-" end)] | @tsv
+    else ["K:<map>", tojson, "0", "-"] | @tsv end
+  ')
+
+  if [[ "$path_mode" == "pingpong" ]] && (( ${#presets[@]} >= 3 )); then
+    local reverse_idx
+    for (( reverse_idx = ${#presets[@]} - 2; reverse_idx >= 1; reverse_idx-- )); do
+      presets+=("${presets[$reverse_idx]}")
+    done
+  fi
+
   if (( ${#presets[@]} < 2 )); then
     log "$cam_name" "warn" "Only ${#presets[@]} preset(s) — need 2+. Skipping."
     return 2  # Permanent condition — caller should not retry frequently
@@ -763,7 +857,7 @@ patrol_camera() {
   if [[ "$home_between_cycles" == "true" ]]; then
     home_cycle_info=" home_between_cycles=on"
   fi
-  log "$cam_name" "info" "Patrol: presets=[${presets[*]}] dwell=${dwell}s settle=${settle_seconds}s poll=${poll_interval_s}s hold=${motion_hold}s max_wait=${max_wait}s manual_hold=${manual_hold}s${sched_info}${dyn_info}${home_cycle_info}"
+  log "$cam_name" "info" "Patrol: presets=[${presets[*]}] dwell=${dwell}s settle=${settle_seconds}s poll=${poll_interval_s}s hold=${motion_hold}s max_wait=${max_wait}s manual_hold=${manual_hold}s${sched_info}${dyn_info}${home_cycle_info}${preset_dwell_info}${path_info}"
 
   local idx=0
   local last_goto_ts=0
@@ -889,6 +983,7 @@ patrol_camera() {
     if is_tracking "$cam_id" "$motion_hold" "$last_goto_ts" "$settle_seconds" "$top_state"; then
       activity_active=1
     fi
+    _patrol_refresh_camera_name
     if (( _LAST_TRACKING_ACTIVE == 1 )); then
       expected_pan=-1; expected_tilt=-1; expected_zoom=-1
       acquisition_state="acquiring"
@@ -904,6 +999,11 @@ patrol_camera() {
       external_controlled=$?
       acquisition_state="$_LAST_ACQUISITION_STATE"
       acquisition_streak=$_LAST_ACQUISITION_STREAK
+      if (( _LAST_AT_HOMEVIEW == 1 )); then
+        expected_pan=-1; expected_tilt=-1; expected_zoom=-1
+        acquisition_state="none"
+        acquisition_streak=0
+      fi
       if (( external_controlled == 0 )); then
         if (( top_drift_streak > 0 && _LAST_DRIFT_MAGNITUDE * 4 >= top_previous_drift * 3 )); then
           external_control_until=$(( $(date +%s) + manual_hold ))
@@ -973,6 +1073,7 @@ patrol_camera() {
       else
         activity_active=0
       fi
+      _patrol_refresh_camera_name
       if (( _LAST_ACTIVITY_KNOWN == 0 )); then
         unknown_hold_seconds=$(( unknown_hold_seconds + 5 ))
         if (( unknown_hold_seconds >= 300 )); then
@@ -998,6 +1099,8 @@ patrol_camera() {
       idx=$(( (idx + 1) % ${#presets[@]} ))
       # Home between cycles: visit home position when cycle wraps
       if [[ "$home_between_cycles" == "true" ]] && (( idx == 0 )); then
+        settle_seconds=$camera_settle_seconds
+        poll_interval_s=$camera_poll_interval_s
         if ! _patrol_home_dwell "$cam_id" "$cam_name" "$dwell" "$motion_hold" \
              "$settle_seconds" "$manual_hold" "$dyn_tracking" "$poll_interval_s"; then
           continue  # Interrupted — back to top for hold/tracking checks
@@ -1020,6 +1123,17 @@ patrol_camera() {
 
     case "$code" in
       200|204)
+        slot_dwell=$dwell
+        if [[ -n "$slot" ]]; then
+          slot_dwell=${preset_dwells[$slot]:-$dwell}
+        fi
+        local slot_max_settle=$(( slot_dwell / 2 ))
+        (( slot_max_settle < 1 )) && slot_max_settle=1
+        settle_seconds=$configured_settle_seconds
+        (( settle_seconds > slot_max_settle )) && settle_seconds=$slot_max_settle
+        poll_interval_s=$(( slot_dwell / 3 ))
+        (( poll_interval_s > 5 )) && poll_interval_s=5
+        (( poll_interval_s < 2 )) && poll_interval_s=2
         last_goto_ts=$(date +%s)
         acquisition_state="acquiring"
         acquisition_streak=0
@@ -1052,7 +1166,7 @@ patrol_camera() {
     # Dwell at current preset, polling for PTZ drift and motion.
     # Uses adaptive poll_interval_s and the /ptz/position endpoint to detect
     # pan/tilt/zoom changes (manual control via the Protect app).
-    local dwell_remaining=$dwell
+    local dwell_remaining=$slot_dwell
     local dwell_interrupted=0
     local dwell_activity_checked=0
     local dwell_unknown_seconds=0
@@ -1085,6 +1199,7 @@ patrol_camera() {
       if is_tracking "$cam_id" "$motion_hold" "$last_goto_ts" "$settle_seconds" "$cam_state"; then
         activity_active=1
       fi
+      _patrol_refresh_camera_name
       if (( _LAST_TRACKING_ACTIVE == 1 )); then
         expected_pan=-1; expected_tilt=-1; expected_zoom=-1
         acquisition_state="acquiring"
@@ -1110,6 +1225,11 @@ patrol_camera() {
         external_controlled=$?
         acquisition_state="$_LAST_ACQUISITION_STATE"
         acquisition_streak=$_LAST_ACQUISITION_STREAK
+        if (( _LAST_AT_HOMEVIEW == 1 )); then
+          expected_pan=-1; expected_tilt=-1; expected_zoom=-1
+          acquisition_state="none"
+          acquisition_streak=0
+        fi
         if (( external_controlled == 0 )); then
           if (( dwell_drift_streak > 0 && _LAST_DRIFT_MAGNITUDE * 4 >= dwell_previous_drift * 3 )); then
             external_control_until=$(( $(date +%s) + manual_hold ))
@@ -1177,6 +1297,8 @@ patrol_camera() {
 
     # Home between cycles: visit home position when cycle wraps back to first preset
     if [[ "$home_between_cycles" == "true" ]] && (( idx == 0 )); then
+      settle_seconds=$camera_settle_seconds
+      poll_interval_s=$camera_poll_interval_s
       if ! _patrol_home_dwell "$cam_id" "$cam_name" "$dwell" "$motion_hold" \
            "$settle_seconds" "$manual_hold" "$dyn_tracking" "$poll_interval_s"; then
         continue  # Interrupted — back to top for hold/tracking checks
