@@ -175,6 +175,8 @@ for (( i = 0; i < count; i++ )); do
   [[ "$preset_dwell" != "null" ]] || preset_dwell=none
   echo "    preset_dwell_seconds:       $preset_dwell"
   echo "    path_mode:                  $(echo "$cam_config" | jq -r '.path_mode // "loop"')"
+  echo "    auto_tracking_object_types: $(echo "$cam_config" | jq -c 'if .auto_tracking_object_types == null then ["person"] else .auto_tracking_object_types end')"
+  echo "    auto_tracking_with_zoom:    $(echo "$cam_config" | jq -r 'if .auto_tracking_with_zoom == null then "camera setting" else .auto_tracking_with_zoom end')"
   echo "    motion_hold:                $(echo "$cam_config" | jq -r '.motion_hold_seconds // 15')s"
   echo "    max_tracking_wait:          $(echo "$cam_config" | jq -r '.max_tracking_wait // 300')s"
   echo "    manual_control_hold:        $(echo "$cam_config" | jq -r '.manual_control_hold_seconds // 120')s"

@@ -144,6 +144,8 @@ Edit `/data/ptz-patrol/config.json`:
 | `defaults.home_on_shutdown` | `false` | Send cameras to home position on service stop |
 | `defaults.home_between_cycles` | `false` | Go to home position after completing a full preset cycle before starting again |
 | `defaults.dynamic_auto_tracking` | `false` | Enable dynamic auto-tracking (see below) |
+| `defaults.auto_tracking_object_types` | `["person"]` | Object types for dynamic auto-tracking. `vehicle` needs camera support. |
+| `defaults.auto_tracking_with_zoom` | `null` | `true` or `false` sets zoom when auto-tracking starts. `null` keeps the camera setting. |
 
 ### Per-Camera Overrides
 
@@ -243,7 +245,11 @@ Dynamic auto-tracking solves this by enabling auto-tracking **once at patrol sta
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `dynamic_auto_tracking` | `false` | Enable dynamic auto-tracking (person detection only) |
+| `dynamic_auto_tracking` | `false` | Enable dynamic auto-tracking |
+
+Set `auto_tracking_object_types` to `["person","vehicle"]` to include vehicles on cameras with vehicle-tracking support, such as the AI PTZ Industrial. Person tracking is always allowed. Patrol checks the types at startup. It logs a warning for each unknown or unsupported type and removes it. A non-array or an empty result logs a warning and uses `["person"]`.
+
+Set `auto_tracking_with_zoom` to `true` or `false` to change the camera setting in the same enable request. Omit it or use `null` to keep the camera setting. Pause and shutdown disable tracking without a zoom change. Both keys can use camera overrides.
 
 When enabled, the script will:
 1. Disable any existing auto-tracking on the camera at startup (clean slate)

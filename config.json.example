@@ -17,7 +17,10 @@
     "home_on_shutdown": false,
     "home_between_cycles": false,
     "schedule": null,
-    "dynamic_auto_tracking": false
+    "dynamic_auto_tracking": false,
+    "_note_auto_tracking": "Types must be an array. Person is always allowed. Vehicle needs camera support. Invalid or empty types use person. Zoom null keeps the camera setting. True or false changes zoom only when tracking is enabled.",
+    "auto_tracking_object_types": ["person"],
+    "auto_tracking_with_zoom": null
   },
 
   "camera_overrides": {

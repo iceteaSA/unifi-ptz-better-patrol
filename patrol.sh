@@ -426,15 +426,19 @@ is_within_schedule() {
 # ---------------------------------------------------------------------------
 
 # Enable or disable auto-tracking on a camera via API PATCH.
-# Arguments: cam_id cam_name types_json action_label
-#   types_json: '["person"]' to enable, '[]' to disable
+# Arguments: cam_id cam_name types_json action_label [zoom]
+#   types_json: validated object types to enable, '[]' to disable
 #   action_label: "enabled" or "disabled" (for logging)
 set_auto_tracking() {
   local cam_id=$1 cam_name=$2 types_json=$3 action_label=$4
+  local zoom=${5:-null} zoom_field=""
+  if [[ "$types_json" != "[]" && ( "$zoom" == "true" || "$zoom" == "false" ) ]]; then
+    zoom_field=",\"autoTrackingWithZoom\":$zoom"
+  fi
   api_ensure_auth
   local code
   code=$(api_patch "/cameras/$cam_id" \
-    "{\"smartDetectSettings\":{\"autoTrackingObjectTypes\":$types_json}}") || true
+    "{\"smartDetectSettings\":{\"autoTrackingObjectTypes\":$types_json$zoom_field}}") || true
   if [[ "$code" == "200" ]]; then
     log "$cam_name" "info" "Auto-tracking $action_label ($types_json)"
     return 0
@@ -442,6 +446,51 @@ set_auto_tracking() {
     log "$cam_name" "warn" "Failed to set auto-tracking (HTTP ${code:-timeout})"
     return 1
   fi
+}
+
+# These values use caller scope so startup validation needs no poll-time parsing.
+_patrol_parse_tracking_config() {
+  local cam_config=$1 cam_discovery_json=$2 cam_name=$3
+  local requested vehicle_capable type separator=""
+  requested=$(jq -c 'if .auto_tracking_object_types == null then ["person"] else .auto_tracking_object_types end' <<< "$cam_config")
+  vehicle_capable=$(jq -r '.feature_vehicle_tracking == true' <<< "${cam_discovery_json:-\{\}}")
+  tracking_types_json="["
+  tracking_types_label=""
+  if jq -e 'type == "array"' <<< "$requested" >/dev/null; then
+    while IFS= read -r type; do
+      case "$type" in
+        '"person"') ;;
+        '"vehicle"')
+          if [[ "$vehicle_capable" != "true" ]]; then
+            log "$cam_name" "warn" "Unsupported auto-tracking type $type — ignoring"
+            continue
+          fi
+          ;;
+        *)
+          log "$cam_name" "warn" "Unknown auto-tracking type $type — ignoring"
+          continue
+          ;;
+      esac
+      tracking_types_json+="$separator$type"
+      type=${type#\"}; type=${type%\"}
+      tracking_types_label+="$separator$type"
+      separator=","
+    done < <(jq -c '.[]' <<< "$requested")
+  fi
+  tracking_types_json+="]"
+  if [[ "$tracking_types_json" == "[]" ]]; then
+    log "$cam_name" "warn" 'Invalid or empty auto_tracking_object_types — using ["person"]'
+    tracking_types_json='["person"]'
+    tracking_types_label="person"
+  fi
+  tracking_with_zoom=$(jq -r 'if .auto_tracking_with_zoom == null then null else .auto_tracking_with_zoom end' <<< "$cam_config")
+  case "$tracking_with_zoom" in
+    true|false|null) ;;
+    *)
+      log "$cam_name" "warn" "Invalid auto_tracking_with_zoom — keeping camera setting"
+      tracking_with_zoom=null
+      ;;
+  esac
 }
 
 # ---------------------------------------------------------------------------
@@ -752,6 +801,8 @@ patrol_camera() {
   # Dynamic auto-tracking: enable tracking on smart detection, disable when clear
   local dyn_tracking
   dyn_tracking=$(echo "$cam_config" | jq -r '.dynamic_auto_tracking // false')
+  local tracking_types_json tracking_types_label tracking_with_zoom
+  _patrol_parse_tracking_config "$cam_config" "$cam_discovery_json" "$cam_name"
 
   # Presets: explicit override or auto-discovered
   local -a presets
@@ -847,7 +898,11 @@ patrol_camera() {
   fi
   local dyn_info=""
   if [[ "$dyn_tracking" == "true" ]]; then
-    dyn_info=" dynamic_tracking=on"
+    dyn_info=" dynamic_tracking=on types=$tracking_types_label"
+    case "$tracking_with_zoom" in
+      true) dyn_info+=" zoom=on" ;;
+      false) dyn_info+=" zoom=off" ;;
+    esac
   fi
   local home_cycle_info=""
   if [[ "$home_between_cycles" == "true" ]]; then
@@ -876,7 +931,7 @@ patrol_camera() {
   # Enable auto-tracking once at patrol start (stays on permanently).
   # Only disabled on schedule pause and shutdown.
   if [[ "$dyn_tracking" == "true" ]]; then
-    if set_auto_tracking "$cam_id" "$cam_name" '["person"]' "enabled"; then
+    if set_auto_tracking "$cam_id" "$cam_name" "$tracking_types_json" "enabled" "$tracking_with_zoom"; then
       tracking_enabled=1
     fi
   fi
@@ -919,7 +974,7 @@ patrol_camera() {
       acquisition_streak=0
       # Re-enable auto-tracking after schedule pause
       if [[ "$dyn_tracking" == "true" ]] && (( tracking_enabled == 0 )); then
-        if set_auto_tracking "$cam_id" "$cam_name" '["person"]' "enabled"; then
+        if set_auto_tracking "$cam_id" "$cam_name" "$tracking_types_json" "enabled" "$tracking_with_zoom"; then
           tracking_enabled=1
         fi
       fi
