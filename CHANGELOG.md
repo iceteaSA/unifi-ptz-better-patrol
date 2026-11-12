@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.3.0](https://github.com/iceteaSA/unifi-ptz-better-patrol/compare/v1.2.0...v1.3.0) (2026-11-12)
+
+
+### Features
+
+* configurable auto-tracking object types and zoom ([8ca0f06](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/8ca0f0630addb15ecda4b0d17223f41b27f2b2e9))
+* post patrol status to a webhook ([4642811](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/4642811dc116ded7e0bbee1565680bebcbc6ac1a))
+* tracking object types, tracking zoom, Home Assistant status webhook ([59ce372](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/59ce372fa1a0453e2e657ade95965abfb040a800))
+
+
+### Bug Fixes
+
+* keep the config private when an older installer upgrades ([715ba5a](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/715ba5ac5a69fd8774751184765f454e8c11480a))
+* protect the webhook secret and config file ([9474961](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/9474961487da1a5e82896a1230c38ed43baee711))
+* report the version when an older installer upgrades ([c901b9a](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/c901b9a1d6559e10a4bc7355b6085808245dfaf7))
+* tighten tracking and status edge cases ([e71165d](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/e71165ddc5954f8d54350e3d231b9e267c193764))
+
+
+### Documentation
+
+* align batch 2 code and docs with project conventions ([41bbba3](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/41bbba343a649f27a07e10217ec13b44d976d8a2))
+
+
+### Code Refactoring
+
+* align field-report code with project conventions ([da57165](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/da57165974a3ee5379f052e2ddf035d115b2d2ce))
+
 ## [1.2.0](https://github.com/iceteaSA/unifi-ptz-better-patrol/compare/v1.1.0...v1.2.0) (2026-11-12)
 
 
