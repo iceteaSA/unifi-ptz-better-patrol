@@ -151,6 +151,8 @@ Set `preset_dwell_seconds` in `defaults` or a camera override. Each key is a pre
 
 For each slot, the settle window is the configured `ptz_settle_seconds`, limited to half that slot's dwell (minimum 1 second). The poll interval is one third of that dwell, limited to 2 through 5 seconds. Home-between-cycles uses the camera's `dwell_seconds`, settle window, and poll interval.
 
+Protect can return the camera to its HomeView after auto-tracking. When an acquired position drifts, patrol reads `/cameras/{id}/ptz/home` with one attempt. If all live axes match HomeView (pan and tilt within 200 steps, zoom within 30), patrol does not start a manual-control hold. It stops position checks for the rest of that dwell and continues at the next preset. A failed or invalid HomeView read keeps the existing drift rules. Pressing Home in the Protect app is also treated as camera-initiated, so that action does not start a manual-control hold.
+
 Set `path_mode` to `"pingpong"` in `defaults` or a camera override to use both directions. For example, `[0, 1, 2, 3]` becomes `[0, 1, 2, 3, 2, 1]`. The endpoints do not repeat. Two slots keep their original order. Other values log a warning and use `"loop"`. With `home_between_cycles`, the camera visits home after the return leg, before the index returns to the first slot.
 
 > **Tip**: Run `bash /data/ptz-patrol/discover.sh` to see all discovered cameras, their IDs, presets, zoom positions, and effective config.
@@ -265,6 +267,8 @@ The tag uses the camera name from Protect. Cameras with the same name add the la
 [2026-03-10 12:00:20] [INFO] [Garden] Patrol: presets=[0 1 2 3 2 1] dwell=30s settle=10s poll=5s hold=15s max_wait=300s manual_hold=120s path=pingpong
 [2026-03-10 12:00:25] [INFO] [Driveway #abc123] Camera renamed in Protect: 'Driveway' → 'Gate'
 [2026-03-10 12:00:30] [INFO] [Gate #abc123] → Slot 4 [HTTP 200]
+[2026-03-10 12:00:45] [INFO] [Gate #abc123] PTZ drift detected: pan(11127→10880) tilt(10412→11430) zoom(710→0)
+[2026-03-10 12:00:45] [INFO] [Gate #abc123] Camera returned to its HomeView — not manual control
 ```
 
 ## Operational Overview
@@ -322,8 +326,8 @@ The Protect API doesn't expose a "camera is being controlled" flag. Detection us
 
 1. After each `goto`, the patrol waits for the settle window (`ptz_settle_seconds`) to let the motor reach its target. Motor-induced motion during this window is filtered out to prevent false triggers.
 2. During the dwell period, the patrol polls at adaptive intervals (`min(5, dwell/3)` seconds, 2s floor) and compares the live pan/tilt/zoom position against the expected preset values.
-3. If any axis drifts beyond the threshold (pan: 200 steps, tilt: 200 steps, zoom: 30 steps), manual control is detected.
-4. The patrol enters a hold state for `manual_control_hold_seconds` before resuming.
+3. After two consecutive reads acquire the target, drift beyond a threshold (pan: 200 steps, tilt: 200 steps, zoom: 30 steps) starts a confirmation check. A position at HomeView is not manual control. The camera finishes its dwell without more position checks.
+4. Other drift must persist across two polls before the patrol enters a hold for `manual_control_hold_seconds`. A failed HomeView read keeps this confirmation rule.
 5. For the home position (which has no preset data), the live position is sampled after the settle window as the baseline.
 
 This catches manual control on **all three axes** — pan, tilt, and zoom — including control from the Protect app, which doesn't trigger `isMotionDetected` for pan/tilt moves. No additional hardware or Home Assistant integration required.

@@ -39,6 +39,7 @@ is_externally_controlled() {
   local acquisition_streak=${9:-0}
   _LAST_DRIFT_MAGNITUDE=0
   _LAST_GOTO_FAILED=0
+  _LAST_AT_HOMEVIEW=0
   _LAST_ACQUISITION_STATE=$acquisition_state
   _LAST_ACQUISITION_STREAK=$acquisition_streak
 
@@ -122,6 +123,24 @@ is_externally_controlled() {
 
   if [[ -n "$drifted" ]]; then
     log "$cam_name" "info" "PTZ drift detected: ${drifted}"
+    local home_fields="" home_pan home_tilt home_zoom
+    api_get "/cameras/$cam_id/ptz/home" >/dev/null || true
+    if [[ "$_LAST_HTTP_CODE" == "200" ]]; then
+      home_fields=$(printf '%s' "$_LAST_BODY" | jq -r '
+        [.ptz.pan // -1, .ptz.tilt // -1, .ptz.zoom // -1] | @tsv
+      ' 2>/dev/null) || home_fields=""
+      IFS=$'\t' read -r home_pan home_tilt home_zoom <<< "$home_fields"
+      if [[ "$home_pan" =~ ^[0-9]+$ && "$home_tilt" =~ ^[0-9]+$ && "$home_zoom" =~ ^[0-9]+$ ]]; then
+        pan_diff=$(( live_pan - home_pan )); pan_diff=${pan_diff#-}
+        tilt_diff=$(( live_tilt - home_tilt )); tilt_diff=${tilt_diff#-}
+        zoom_diff=$(( live_zoom - home_zoom )); zoom_diff=${zoom_diff#-}
+        if (( pan_diff <= pan_thresh && tilt_diff <= tilt_thresh && zoom_diff <= zoom_thresh )); then
+          log "$cam_name" "info" "Camera returned to its HomeView — not manual control"
+          _LAST_AT_HOMEVIEW=1
+          return 1
+        fi
+      fi
+    fi
     return 0
   fi
 
@@ -584,6 +603,11 @@ _patrol_home_dwell() {
       external_controlled=$?
       acquisition_state="$_LAST_ACQUISITION_STATE"
       acquisition_streak=$_LAST_ACQUISITION_STREAK
+      if (( _LAST_AT_HOMEVIEW == 1 )); then
+        expected_pan=-1; expected_tilt=-1; expected_zoom=-1
+        acquisition_state="none"
+        acquisition_streak=0
+      fi
       if (( external_controlled == 0 )); then
         # Retain at least 75% of the previous drift. A ratio handles pan/tilt
         # and zoom's different motor-step scales while rejecting convergence.
@@ -974,6 +998,11 @@ patrol_camera() {
       external_controlled=$?
       acquisition_state="$_LAST_ACQUISITION_STATE"
       acquisition_streak=$_LAST_ACQUISITION_STREAK
+      if (( _LAST_AT_HOMEVIEW == 1 )); then
+        expected_pan=-1; expected_tilt=-1; expected_zoom=-1
+        acquisition_state="none"
+        acquisition_streak=0
+      fi
       if (( external_controlled == 0 )); then
         if (( top_drift_streak > 0 && _LAST_DRIFT_MAGNITUDE * 4 >= top_previous_drift * 3 )); then
           external_control_until=$(( $(date +%s) + manual_hold ))
@@ -1192,6 +1221,11 @@ patrol_camera() {
         external_controlled=$?
         acquisition_state="$_LAST_ACQUISITION_STATE"
         acquisition_streak=$_LAST_ACQUISITION_STREAK
+        if (( _LAST_AT_HOMEVIEW == 1 )); then
+          expected_pan=-1; expected_tilt=-1; expected_zoom=-1
+          acquisition_state="none"
+          acquisition_streak=0
+        fi
         if (( external_controlled == 0 )); then
           if (( dwell_drift_streak > 0 && _LAST_DRIFT_MAGNITUDE * 4 >= dwell_previous_drift * 3 )); then
             external_control_until=$(( $(date +%s) + manual_hold ))
