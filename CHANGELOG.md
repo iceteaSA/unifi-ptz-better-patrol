@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.1](https://github.com/iceteaSA/unifi-ptz-better-patrol/compare/v1.3.0...v1.3.1) (2026-11-12)
+
+
+### Documentation
+
+* state webhook timestamp units and the first null slot ([#21](https://github.com/iceteaSA/unifi-ptz-better-patrol/issues/21)) ([953bb63](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/953bb635460eb293f92128050e09f5cf945f0798))
+
 ## [1.3.0](https://github.com/iceteaSA/unifi-ptz-better-patrol/compare/v1.2.0...v1.3.0) (2026-11-12)
 
 
