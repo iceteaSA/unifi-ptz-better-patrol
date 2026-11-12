@@ -37,3 +37,19 @@ field_probe() {
   FIELD_NOW=1000
   patrol_camera cam-1 Overwatch "$FIELD_DISCOVERY" "${3:-}"
 }
+
+name_probe() {
+  is_tracking cam-1 60 0 0 '{"id":"cam-1","name":"Gate","state":"CONNECTED"}' || true
+  printf '__name=%s\n' "$_LAST_CAM_NAME"
+  is_tracking cam-1 60 0 0 "$1" || true
+  printf '__next_name=%s\n' "$_LAST_CAM_NAME"
+}
+
+rename_probe() {
+  HOME_CAMERA_STATES=(
+    '{"id":"cam-1","name":"Overwatch","state":"CONNECTED"}'
+    "$1"
+  )
+  HOME_CAMERA_STATES+=("${HOME_CAMERA_STATES[1]}" "${HOME_CAMERA_STATES[1]}")
+  field_probe '{"dwell_seconds":6,"ptz_settle_seconds":0}' 3 "${2:-}"
+}

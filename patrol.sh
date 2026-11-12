@@ -433,6 +433,16 @@ set_auto_tracking() {
 # Home-between-cycles dwell
 # ---------------------------------------------------------------------------
 
+# The patrol owns these caller-scoped names, including during home dwell.
+_patrol_refresh_camera_name() {
+  [[ -z "${protect_name+x}" ]] && return 0
+  if [[ -n "$_LAST_CAM_NAME" && "$_LAST_CAM_NAME" != "$protect_name" ]]; then
+    log "$cam_name" "info" "Camera renamed in Protect: '$protect_name' → '$_LAST_CAM_NAME'"
+    protect_name=$_LAST_CAM_NAME
+    cam_name="${protect_name}${id_suffix:+ #$id_suffix}"
+  fi
+}
+
 # Send the camera to its home position and dwell there for the configured
 # dwell time, polling for motion/tracking and external control exactly like
 # a normal preset dwell.
@@ -444,12 +454,13 @@ set_auto_tracking() {
 # function, shared via bash dynamic scoping):
 #   last_goto_ts expected_pan expected_tilt expected_zoom
 #   acquisition_state acquisition_streak
-#   tracking_enabled external_control_until
+#   tracking_enabled external_control_until cam_name protect_name
 #
 # Returns 0 if dwell completed normally, 1 if interrupted (caller should
 # continue back to the top of the main patrol loop).
 _patrol_home_dwell() {
-  local cam_id=$1 cam_name=$2 dwell=$3 motion_hold=$4 settle_seconds=$5
+  local cam_id=$1 dwell=$3 motion_hold=$4 settle_seconds=$5
+  cam_name=$2
   local manual_hold=$6 dyn_tracking=$7 poll_iv_s=${8:-5}
 
   local hbc_code
@@ -548,6 +559,7 @@ _patrol_home_dwell() {
     if is_tracking "$cam_id" "$motion_hold" "$last_goto_ts" "$settle_seconds" "$cam_state"; then
       activity_active=1
     fi
+    _patrol_refresh_camera_name
     if (( _LAST_TRACKING_ACTIVE == 1 )); then
       expected_pan=-1; expected_tilt=-1; expected_zoom=-1
       acquisition_state="acquiring"
@@ -635,8 +647,11 @@ _patrol_home_dwell() {
 # ---------------------------------------------------------------------------
 
 # Resolve settings and preset list, then loop forever
+# Arguments: cam_id cam_name cam_discovery_json [id_suffix]
 patrol_camera() {
   local cam_id=$1 cam_name=$2
+  local protect_name=$cam_name id_suffix=${4:-}
+  cam_name="${protect_name}${id_suffix:+ #$id_suffix}"
   # Optional: pre-fetched camera JSON from discovery (3rd arg)
   local cam_discovery_json=${3:-}
 
@@ -943,6 +958,7 @@ patrol_camera() {
     if is_tracking "$cam_id" "$motion_hold" "$last_goto_ts" "$settle_seconds" "$top_state"; then
       activity_active=1
     fi
+    _patrol_refresh_camera_name
     if (( _LAST_TRACKING_ACTIVE == 1 )); then
       expected_pan=-1; expected_tilt=-1; expected_zoom=-1
       acquisition_state="acquiring"
@@ -1027,6 +1043,7 @@ patrol_camera() {
       else
         activity_active=0
       fi
+      _patrol_refresh_camera_name
       if (( _LAST_ACTIVITY_KNOWN == 0 )); then
         unknown_hold_seconds=$(( unknown_hold_seconds + 5 ))
         if (( unknown_hold_seconds >= 300 )); then
@@ -1149,6 +1166,7 @@ patrol_camera() {
       if is_tracking "$cam_id" "$motion_hold" "$last_goto_ts" "$settle_seconds" "$cam_state"; then
         activity_active=1
       fi
+      _patrol_refresh_camera_name
       if (( _LAST_TRACKING_ACTIVE == 1 )); then
         expected_pan=-1; expected_tilt=-1; expected_zoom=-1
         acquisition_state="acquiring"
