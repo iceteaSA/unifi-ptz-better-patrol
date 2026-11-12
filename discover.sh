@@ -31,6 +31,9 @@ discover_ptz_cameras() {
         .smartDetectSettings.autoTrackingObjectTypes // [] | map(select(. == "person")) | length > 0
       ),
       auto_tracking_types: (.smartDetectSettings.autoTrackingObjectTypes // []),
+      is_person_tracking: (
+        .smartDetectSettings.autoTrackingObjectTypes // [] | map(select(. == "person")) | length > 0
+      ),
       active_patrol_slot: (.activePatrolSlot // null),
       return_home_ms: (.ptz.returnHomeAfterInactivityMs // null)
     }]
@@ -69,6 +72,24 @@ get_camera_config() {
   echo "$defaults" | jq --argjson o "$overrides" '. * $o'
 }
 
+# Read installed version metadata without spawning external processes.
+get_install_version() {
+  local version=unknown ref=unknown commit=unknown key value
+  if [[ -r "$SCRIPT_DIR/VERSION" ]]; then
+    IFS= read -r version < "$SCRIPT_DIR/VERSION" || true
+    [[ -n "$version" ]] || version=unknown
+  fi
+  if [[ -r "$SCRIPT_DIR/install-info" ]]; then
+    while IFS='=' read -r key value; do
+      case "$key" in
+        ref) [[ -n "$value" ]] && ref=$value ;;
+        commit) [[ -n "$value" ]] && commit=$value ;;
+      esac
+    done < "$SCRIPT_DIR/install-info"
+  fi
+  printf '%s (%s@%s)\n' "$version" "$ref" "${commit:0:7}"
+}
+
 # === Main (only when run directly, not sourced) ===
 [[ "${BASH_SOURCE[0]}" != "$0" ]] && return 0
 
@@ -76,7 +97,7 @@ set -euo pipefail
 api_init
 api_auth
 
-echo "=== Discovering PTZ cameras ==="
+echo "=== Discovering PTZ cameras — ptz-patrol $(get_install_version) ==="
 cameras=$(discover_ptz_cameras)
 count=$(echo "$cameras" | jq 'length')
 
@@ -110,6 +131,10 @@ for (( i = 0; i < count; i++ )); do
   echo "  $cam_name ($cam_id)"
   echo "    enabled:                    $enabled"
   echo "    dwell_seconds:              $(echo "$cam_config" | jq -r '.dwell_seconds // 30')"
+  echo "    preset_dwell_seconds:       $(echo "$cam_config" | jq -r '.preset_dwell_seconds // "none"')"
+  echo "    path_mode:                  $(echo "$cam_config" | jq -r '.path_mode // "loop"')"
+  echo "    auto_tracking_object_types: $(echo "$cam_config" | jq -c 'if .auto_tracking_object_types == null then ["person"] else .auto_tracking_object_types end')"
+  echo "    auto_tracking_with_zoom:    $(echo "$cam_config" | jq -r 'if .auto_tracking_with_zoom == null then "camera setting" else .auto_tracking_with_zoom end')"
   echo "    motion_hold:                $(echo "$cam_config" | jq -r '.motion_hold_seconds // 15')s"
   echo "    max_tracking_wait:          $(echo "$cam_config" | jq -r '.max_tracking_wait // 300')s"
   echo "    manual_control_hold:        $(echo "$cam_config" | jq -r '.manual_control_hold_seconds // 120')s"

@@ -56,9 +56,10 @@ discover.sh   -> api.sh
 - **`set -euo pipefail` belongs only in the executables** (`ptz-patrol.sh`, `discover.sh`'s
   direct-run branch, `install.sh`, `uninstall.sh`). Never add it to `api.sh` or `patrol.sh`;
   `set -e` inside a sourced library kills the caller on any non-zero probe.
-- `install.sh` deploys only `install.sh api.sh discover.sh patrol.sh ptz-patrol.sh` +
+- `install.sh` deploys only `install.sh api.sh discover.sh patrol.sh ptz-patrol.sh VERSION` +
   `uninstall.sh` + the unit file. Adding a new device script means editing that loop and the
   file list in `.github/scripts/release-assets.sh`.
+- `/data/ptz-patrol/install-info` records the install ref, commit, and UTC install time.
 
 ## Platform constraints
 

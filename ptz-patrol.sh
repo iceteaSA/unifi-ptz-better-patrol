@@ -75,6 +75,7 @@ if [[ "$auto_discover" != "true" ]]; then
   exit 1
 fi
 
+log "main" "info" "ptz-patrol $(get_install_version) starting"
 log "main" "info" "Discovering PTZ cameras..."
 discovery_attempts=0
 discovery_max=10
