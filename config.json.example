@@ -39,6 +39,8 @@
     "EXAMPLE_CAMERA_ID_2_HERE": {
       "enabled": true,
       "preset_slots": [0, 4, 2],
+      "_note_preset_dwell": "Per-slot seconds; other slots and home use dwell_seconds. Settle and poll intervals follow each slot dwell.",
+      "preset_dwell_seconds": {"4": 45, "2": 15},
       "schedule": {
         "start": "08:00",
         "end": "20:00",
