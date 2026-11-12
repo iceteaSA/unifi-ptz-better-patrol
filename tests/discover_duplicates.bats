@@ -18,6 +18,16 @@ load discover_duplicates_helper
   [ -z "$output" ]
 }
 
+@test "duplicate name parsing tolerates a null camera type" {
+  local cameras='[{"id":"a","name":"One","is_ptz":false,"type":null}]'
+  run discover_duplicate_names "$cameras"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  run discover_duplicate_name_groups "$cameras"
+  [ "$status" -eq 0 ]
+  [ "$output" = "[]" ]
+}
+
 @test "id suffix is empty for every camera when names are unique" {
   local unique='[{"id":"aaaaaa111111","name":"North","is_ptz":true,"type":"UVC G6 PTZ"},{"id":"bbbbbb222222","name":"South","is_ptz":true,"type":"UVC G6 PTZ"}]'
   run discover_id_suffix "$unique" aaaaaa111111

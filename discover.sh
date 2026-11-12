@@ -18,7 +18,7 @@ discover_ptz_cameras() {
       .state == "CONNECTED" and (
         (.featureFlags.isPtz // false) or
         (.featureFlags.canPtz // false) or
-        (.type | test("PTZ"; "i"))
+        ((.type // "") | test("PTZ"; "i"))
       )
     ) | {
       id,
@@ -62,12 +62,12 @@ discover_ptz_cameras() {
 
 # Print ids of discovered PTZ cameras whose names are shared by another PTZ camera.
 discover_duplicate_names() {
-  jq -r '[.[] | select(.is_ptz == true or (.type | test("PTZ"; "i")))] as $cams | [$cams[].name] | group_by(.) | map(select(length > 1)) | flatten as $names | $cams[] | select(.name as $n | $names | index($n)) | .id' <<< "$1"
+  jq -r '[.[] | select(.is_ptz == true or ((.type // "") | test("PTZ"; "i")))] as $cams | [$cams[].name] | group_by(.) | map(select(length > 1)) | flatten as $names | $cams[] | select(.name as $n | $names | index($n)) | .id' <<< "$1"
 }
 
 # Print duplicate-name groups for one warning per shared name.
 discover_duplicate_name_groups() {
-  jq -c '[.[] | select(.is_ptz == true or (.type | test("PTZ"; "i"))) | {name, id}] | group_by(.name) | map(select(length > 1))' <<< "$1"
+  jq -c '[.[] | select(.is_ptz == true or ((.type // "") | test("PTZ"; "i"))) | {name, id}] | group_by(.name) | map(select(length > 1))' <<< "$1"
 }
 
 # Return a short id suffix only when this camera has a duplicate PTZ name.
@@ -112,20 +112,28 @@ get_camera_config() {
 
 # Read installed version metadata without spawning external processes.
 get_install_version() {
-  local version=unknown ref=unknown commit=unknown key value
+  local version=unknown ref=unknown commit=unknown dirty=false key value
   if [[ -r "$SCRIPT_DIR/VERSION" ]]; then
     IFS= read -r version < "$SCRIPT_DIR/VERSION" || true
+    version=${version%$'\r'}
     [[ -n "$version" ]] || version=unknown
   fi
   if [[ -r "$SCRIPT_DIR/install-info" ]]; then
     while IFS='=' read -r key value; do
+      value=${value%$'\r'}
       case "$key" in
         ref) [[ -n "$value" ]] && ref=$value ;;
         commit) [[ -n "$value" ]] && commit=$value ;;
+        dirty) dirty=$value ;;
       esac
     done < "$SCRIPT_DIR/install-info"
   fi
-  printf '%s (%s@%s)\n' "$version" "$ref" "${commit:0:7}"
+  local short_commit=unknown
+  if [[ "$commit" =~ ^[0-9a-f]{7,40}$ ]]; then
+    short_commit=${commit:0:7}
+    [[ "${dirty:-false}" != true ]] || short_commit+="-dirty"
+  fi
+  printf '%s (%s@%s)\n' "$version" "$ref" "$short_commit"
 }
 
 # === Main (only when run directly, not sourced) ===
@@ -164,8 +172,6 @@ for (( i = 0; i < count; i++ )); do
   [[ "$preset_dwell" != "null" ]] || preset_dwell=none
   echo "    preset_dwell_seconds:       $preset_dwell"
   echo "    path_mode:                  $(echo "$cam_config" | jq -r '.path_mode // "loop"')"
-  echo "    auto_tracking_object_types: $(echo "$cam_config" | jq -c 'if .auto_tracking_object_types == null then ["person"] else .auto_tracking_object_types end')"
-  echo "    auto_tracking_with_zoom:    $(echo "$cam_config" | jq -r 'if .auto_tracking_with_zoom == null then "camera setting" else .auto_tracking_with_zoom end')"
   echo "    motion_hold:                $(echo "$cam_config" | jq -r '.motion_hold_seconds // 15')s"
   echo "    max_tracking_wait:          $(echo "$cam_config" | jq -r '.max_tracking_wait // 300')s"
   echo "    manual_control_hold:        $(echo "$cam_config" | jq -r '.manual_control_hold_seconds // 120')s"

@@ -7,6 +7,7 @@ REPO_NAME="unifi-ptz-better-patrol"
 BRANCH="${PTZ_PATROL_BRANCH:-main}"
 BASE_URL="https://raw.githubusercontent.com/$REPO_OWNER/$REPO_NAME/$BRANCH"
 INSTALL_COMMIT=unknown
+INSTALL_DIRTY=""
 
 if [[ "$BRANCH" != "main" ]]; then
     echo "WARNING: Installing unverified code from branch '$BRANCH' fetched directly from GitHub."
@@ -84,7 +85,7 @@ if [ "$(realpath "$SCRIPT_DIR")" = "$(realpath "$INSTALL_DIR")" ]; then
 fi
 
 LOCAL_CHECKOUT=false
-if [[ "$INSTALLER_IS_INSTALLED" == false && -f "$SCRIPT_DIR/install.sh" ]]; then
+if [[ "$INSTALLER_IS_INSTALLED" == false && -f "$SCRIPT_DIR/install.sh" && -f "$SCRIPT_DIR/api.sh" && -f "$SCRIPT_DIR/discover.sh" && -f "$SCRIPT_DIR/patrol.sh" && -f "$SCRIPT_DIR/ptz-patrol.sh" ]]; then
     LOCAL_CHECKOUT=true
 fi
 
@@ -152,8 +153,21 @@ fi
 # download to one commit without changing bootstrap's offline behavior.
 if [[ "$LOCAL_CHECKOUT" == true ]]; then
     if command -v git >/dev/null 2>&1; then
-        INSTALL_COMMIT=$(git -C "$SCRIPT_DIR" rev-parse HEAD 2>/dev/null) || INSTALL_COMMIT=unknown
-        [[ "$INSTALL_COMMIT" =~ ^[0-9a-f]{40}$ ]] || INSTALL_COMMIT=unknown
+        if INSTALL_COMMIT=$(git -C "$SCRIPT_DIR" rev-parse HEAD 2>/dev/null) && [[ "$INSTALL_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+            if local_status=$(git -C "$SCRIPT_DIR" status --porcelain 2>/dev/null); then
+                if [[ -n "$local_status" ]]; then
+                    INSTALL_DIRTY=true
+                else
+                    INSTALL_DIRTY=false
+                fi
+            fi
+        else
+            INSTALL_COMMIT=unknown
+            echo "WARNING: Could not read a valid commit from the local checkout; install commit is unknown."
+        fi
+    fi
+    if ! command -v git >/dev/null 2>&1; then
+        echo "WARNING: Git is unavailable in the local checkout; install commit is unknown."
     fi
 else
     resolved_commit=$(curl -fsSL --max-time 10 -H 'Accept: application/vnd.github.sha' "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/commits/$BRANCH" 2>/dev/null) || resolved_commit=
@@ -175,14 +189,6 @@ for f in install.sh api.sh discover.sh patrol.sh ptz-patrol.sh; do
 done
 get_file "VERSION" "$INSTALL_DIR/VERSION"
 chmod 0644 "$INSTALL_DIR/VERSION"
-
-install_ref=$BRANCH
-if [[ "$LOCAL_CHECKOUT" == true ]]; then
-    install_ref=local
-fi
-install_info_tmp="$INSTALL_DIR/install-info.tmp.$$"
-printf 'ref=%s\ncommit=%s\ninstalled_at=%s\n' "$install_ref" "$INSTALL_COMMIT" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$install_info_tmp"
-mv "$install_info_tmp" "$INSTALL_DIR/install-info"
 
 # Install uninstall script
 get_file "uninstall.sh" "$INSTALL_DIR/uninstall.sh"
@@ -272,6 +278,16 @@ else
     echo "Service successfully enabled and started"
 fi
 
+install_ref=$BRANCH
+if [[ "$LOCAL_CHECKOUT" == true ]]; then
+    install_ref=local
+fi
+install_info_tmp="$INSTALL_DIR/install-info.tmp.$$"
+printf 'ref=%s\ncommit=%s\ninstalled_at=%s\n' "$install_ref" "$INSTALL_COMMIT" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$install_info_tmp"
+if [[ -n "$INSTALL_DIRTY" ]]; then
+    printf 'dirty=%s\n' "$INSTALL_DIRTY" >> "$install_info_tmp"
+fi
+mv "$install_info_tmp" "$INSTALL_DIR/install-info"
 echo ""
 echo "Installation successful!"
 echo "Configuration: nano $INSTALL_DIR/config.json"

@@ -28,3 +28,27 @@ load install_version_helper
   [ "$status" -eq 0 ]
   [ "$output" = "1.1.0 (unknown@unknown)" ]
 }
+
+@test "version helper strips CRLF from VERSION and install metadata" {
+  printf '1.1.0\r\n' > "$SCRIPT_DIR/VERSION"
+  printf 'ref=local\r\ncommit=c61700a8f1f16ac621e5896c11eb3c9021643c74\r\ndirty=true\r\n' > "$SCRIPT_DIR/install-info"
+  run get_install_version
+  [ "$status" -eq 0 ]
+  [ "$output" = "1.1.0 (local@c61700a-dirty)" ]
+}
+
+@test "version helper validates commit before displaying it" {
+  printf '1.1.0\n' > "$SCRIPT_DIR/VERSION"
+  printf 'ref=main\ncommit=not-a-sha\n' > "$SCRIPT_DIR/install-info"
+  run get_install_version
+  [ "$status" -eq 0 ]
+  [ "$output" = "1.1.0 (main@unknown)" ]
+}
+
+@test "version helper appends dirty marker to a valid local commit" {
+  printf '1.1.0\n' > "$SCRIPT_DIR/VERSION"
+  printf 'ref=local\ncommit=c61700a8f1f16ac621e5896c11eb3c9021643c74\ndirty=true\n' > "$SCRIPT_DIR/install-info"
+  run get_install_version
+  [ "$status" -eq 0 ]
+  [ "$output" = "1.1.0 (local@c61700a-dirty)" ]
+}
