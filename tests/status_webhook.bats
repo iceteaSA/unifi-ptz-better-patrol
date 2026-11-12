@@ -29,6 +29,26 @@ setup() {
   [ "$output" = '[]' ]
 }
 
+@test "webhook URL whitespace is rejected without logging the value" {
+  run status_sequence_probe '{"status_webhook_url":"https://example.invalid/private-id -o injected"}' patrolling:1000:4
+  [ "$status" -eq 0 ]
+  [ "$output" = '[api] warn: Invalid status_webhook_url — status webhook disabled' ]
+  assert_not_contains "$output" 'private-id'
+  run status_payloads
+  [ "$status" -eq 0 ]
+  [ "$output" = '[]' ]
+}
+
+@test "HTTP webhook logs its cleartext risk once without the URL" {
+  run status_sequence_probe '{"status_webhook_url":"http://example.invalid/private-id"}' patrolling:1000:4
+  [ "$status" -eq 0 ]
+  [ "$output" = $'[api] info: Status webhook enabled\n[api] info: Status webhook uses http:// — the webhook id is sent unencrypted' ]
+  assert_not_contains "$output" 'private-id'
+  run status_payloads
+  [ "$status" -eq 0 ]
+  assert_contains "$output" '"state":"patrolling"'
+}
+
 @test "quotes backslashes and control characters cannot inject curl configuration" {
   local url config
   for url in 'https://example.invalid/"secret' 'https://example.invalid/\secret' $'https://example.invalid/secret\nretry = 5' $'https://example.invalid/secret\r' $'https://example.invalid/secret\n'; do

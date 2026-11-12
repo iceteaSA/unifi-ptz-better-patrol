@@ -268,14 +268,16 @@ Set the top-level `status_webhook_url` to a Home Assistant webhook URL. For exam
 
 ```json
 {
-  "status_webhook_url": "http://homeassistant.example:8123/api/webhook/REPLACE_WITH_RANDOM_ID",
+  "status_webhook_url": "https://homeassistant.example/api/webhook/REPLACE_WITH_RANDOM_ID",
   "defaults": {
     "status_heartbeat_seconds": 300
   }
 }
 ```
 
-The URL is a secret. Do not put it in logs, screenshots, or public reports. Use an empty string to disable posts. Patrol accepts only HTTP and HTTPS URLs. It rejects double-quote characters, backslashes, and control characters.
+The URL is a secret. Do not put it in logs, screenshots, or public reports. Use an empty string to disable posts. Patrol accepts only HTTP and HTTPS URLs. It rejects double-quote characters, backslashes, whitespace, and control characters.
+
+Use `https://` with a certificate that the NVR trusts. An `http://` URL sends the webhook id unencrypted on a LAN. A device that can read that traffic can copy the id and send incorrect status reports. Patrol logs this risk without the URL. The service removes proxy settings from its environment to prevent a proxy from receiving the webhook id or NVR traffic. Each install or update sets `config.json` to mode `0600` because it holds the NVR password and webhook URL.
 
 Patrol posts on each state change. A heartbeat sends the current state again after `status_heartbeat_seconds`. Camera overrides can set this interval. Use an integer with a minimum of 30 seconds, or `0` to disable heartbeats.
 
@@ -308,7 +310,7 @@ The JSON payload has these fields:
 | `unreadable` | The five-minute camera-read warning has occurred. The state stays until `is_tracking` gets a correct `CONNECTED` camera response. |
 | `stopped` | The daemon is shutting down. |
 
-This example requires Home Assistant 2024.10 or later for the `triggers:` and `actions:` keys.
+Minimum Home Assistant version: `2024.10`. The example uses the `triggers:` and `actions:` keys.
 
 This Home Assistant YAML stores the last report and state for one camera. It makes a notification when it gets no report for 600 seconds, two times the default heartbeat. A check runs each minute. Home Assistant uses the notification id to update the same notification. Change the webhook id, camera id, and helper names for your camera. Do not use this missing-heartbeat notification with a heartbeat of `0`.
 

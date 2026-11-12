@@ -101,6 +101,11 @@ if [ ! -w "$INSTALL_DIR" ]; then
     exit 1
 fi
 
+# Config credentials must stay private during updates and bootstrap.
+if [ -f "$INSTALL_DIR/config.json" ]; then
+    chmod 0600 "$INSTALL_DIR/config.json"
+fi
+
 # Install dependencies
 install_deps() {
     local missing=()
@@ -195,41 +200,51 @@ get_file "uninstall.sh" "$INSTALL_DIR/uninstall.sh"
 chmod +x "$INSTALL_DIR/uninstall.sh"
 
 # Install config
-if [ ! -f "$INSTALL_DIR/config.json" ]; then
-    get_file "config.json.example" "$INSTALL_DIR/config.json"
-    if [ -z "$ARG_NVR" ] && [ -z "$ARG_USER" ] && [ -z "$ARG_PASS" ]; then
-        echo "Config created — edit $INSTALL_DIR/config.json with your credentials"
+(
+    umask 077
+    if [ ! -f "$INSTALL_DIR/config.json" ]; then
+        private_cfg=$(mktemp "$INSTALL_DIR/config.json.new.XXXXXX")
+        trap 'rm -f "$private_cfg"' EXIT
+        get_file "config.json.example" "$private_cfg"
+        chmod 0600 "$private_cfg"
+        mv "$private_cfg" "$INSTALL_DIR/config.json"
+        if [ -z "$ARG_NVR" ] && [ -z "$ARG_USER" ] && [ -z "$ARG_PASS" ]; then
+            echo "Config created — edit $INSTALL_DIR/config.json with your credentials"
+        fi
+    else
+        echo "Config already exists, not overwriting"
     fi
-else
-    echo "Config already exists, not overwriting"
-fi
+    chmod 0600 "$INSTALL_DIR/config.json"
 
-# Apply credential args (works on both new and existing configs)
-if [ -n "$ARG_NVR" ] || [ -n "$ARG_USER" ] || [ -n "$ARG_PASS" ]; then
-    if ! command -v jq &>/dev/null; then
-        echo "Error: jq is required to set config values"
-        exit 1
+    # Private intermediate files prevent credential exposure during updates.
+    if [ -n "$ARG_NVR" ] || [ -n "$ARG_USER" ] || [ -n "$ARG_PASS" ]; then
+        if ! command -v jq &>/dev/null; then
+            echo "Error: jq is required to set config values"
+            exit 1
+        fi
+        local_cfg="$INSTALL_DIR/config.json"
+        tmp_cfg=$(mktemp "$INSTALL_DIR/config.json.tmp.XXXXXX")
+        tmp_out=$(mktemp "$INSTALL_DIR/config.json.out.XXXXXX")
+        trap 'rm -f "$tmp_cfg" "$tmp_out"' EXIT
+        cp "$local_cfg" "$tmp_cfg"
+        if ! jq . "$tmp_cfg" >/dev/null 2>&1; then
+            echo "Error: $local_cfg is not valid JSON — cannot apply credential flags"
+            exit 1
+        fi
+        if [ -n "$ARG_NVR" ]; then
+            jq --arg v "$ARG_NVR" '.nvr_address = $v' "$tmp_cfg" > "$tmp_out" && mv "$tmp_out" "$tmp_cfg"
+        fi
+        if [ -n "$ARG_USER" ]; then
+            jq --arg v "$ARG_USER" '.username = $v' "$tmp_cfg" > "$tmp_out" && mv "$tmp_out" "$tmp_cfg"
+        fi
+        if [ -n "$ARG_PASS" ]; then
+            jq --arg v "$ARG_PASS" '.password = $v' "$tmp_cfg" > "$tmp_out" && mv "$tmp_out" "$tmp_cfg"
+        fi
+        mv "$tmp_cfg" "$local_cfg"
+        chmod 0600 "$local_cfg"
+        echo "Config updated with provided credentials"
     fi
-    local_cfg="$INSTALL_DIR/config.json"
-    tmp_cfg="$INSTALL_DIR/config.json.tmp"
-    cp "$local_cfg" "$tmp_cfg"
-    if ! jq . "$tmp_cfg" >/dev/null 2>&1; then
-        echo "Error: $local_cfg is not valid JSON — cannot apply credential flags"
-        rm -f "$tmp_cfg"
-        exit 1
-    fi
-    if [ -n "$ARG_NVR" ]; then
-        jq --arg v "$ARG_NVR" '.nvr_address = $v' "$tmp_cfg" > "$tmp_cfg.out" && mv "$tmp_cfg.out" "$tmp_cfg"
-    fi
-    if [ -n "$ARG_USER" ]; then
-        jq --arg v "$ARG_USER" '.username = $v' "$tmp_cfg" > "$tmp_cfg.out" && mv "$tmp_cfg.out" "$tmp_cfg"
-    fi
-    if [ -n "$ARG_PASS" ]; then
-        jq --arg v "$ARG_PASS" '.password = $v' "$tmp_cfg" > "$tmp_cfg.out" && mv "$tmp_cfg.out" "$tmp_cfg"
-    fi
-    mv "$tmp_cfg" "$local_cfg"
-    echo "Config updated with provided credentials"
-fi
+)
 
 # Install systemd service
 SERVICE_FILE="/etc/systemd/system/$SERVICE_NAME.service"

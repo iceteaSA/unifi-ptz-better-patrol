@@ -13,6 +13,7 @@ Restart=on-failure
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
+UnsetEnvironment=http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY
 
 # Sandboxing. Kept deliberately minimal: this daemon needs network egress to the
 # NVR and writes its cookie jar / header / body temp files under /tmp, which

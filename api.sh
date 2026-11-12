@@ -92,12 +92,15 @@ api_load_status_webhook() {
   ')
   _STATUS_WEBHOOK_URL=""
   [[ -n "$url" ]] || return 0
-  if [[ ! "$url" =~ ^https?:// || "$url" == *\"* || "$url" == *\\* || "$url" =~ [[:cntrl:]] ]]; then
+  if [[ ! "$url" =~ ^https?:// || "$url" == *\"* || "$url" == *\\* || "$url" =~ [[:cntrl:][:space:]] ]]; then
     log "api" "warn" "Invalid status_webhook_url — status webhook disabled"
     return 0
   fi
   _STATUS_WEBHOOK_URL=$url
   log "api" "info" "Status webhook enabled"
+  if [[ "$url" == http://* ]]; then
+    log "api" "info" "Status webhook uses http:// — the webhook id is sent unencrypted"
+  fi
 }
 
 # The URL contains a secret. Use stdin, not the process arguments.
