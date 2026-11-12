@@ -359,8 +359,8 @@ Key operational signals:
 
 ```log
 # Discovery
-[2026-03-10 12:00:00] [INFO] [main] Discovering PTZ cameras...
 [2026-03-10 12:00:00] [INFO] [main] ptz-patrol 1.1.0 (main@c61700a) starting
+[2026-03-10 12:00:00] [INFO] [main] Discovering PTZ cameras...
 [2026-03-10 12:00:01] [INFO] [main] Found 3 PTZ camera(s) — launching patrol loops
 
 # Normal patrol
@@ -456,7 +456,15 @@ bash /data/ptz-patrol/discover.sh
 /data/ptz-patrol/uninstall.sh
 ```
 
-The discovery header reports the installed version and commit. Camera details show current auto-tracking object types separately from tracking support and the camera's tracking-with-zoom setting.
+The discovery header reports the installed version and commit. Each camera block shows current auto-tracking object types separately from tracking support and the camera's tracking-with-zoom setting. For example:
+
+```text
+  G6 PTZ
+  PTZ (firmware):   true
+  Auto-tracking now: off
+  Tracking support: person
+  Tracking with zoom: on
+```
 
 ## Project Structure
 

@@ -17,3 +17,26 @@ load discover_duplicates_helper
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
+
+@test "id suffix is empty for every camera when names are unique" {
+  local unique='[{"id":"aaaaaa111111","name":"North","is_ptz":true,"type":"UVC G6 PTZ"},{"id":"bbbbbb222222","name":"South","is_ptz":true,"type":"UVC G6 PTZ"}]'
+  run discover_id_suffix "$unique" aaaaaa111111
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  run discover_id_suffix "$unique" bbbbbb222222
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "id suffix is emitted for every member of a shared-name group only" {
+  local shared='[{"id":"aaaaaa111111","name":"North","is_ptz":true,"type":"UVC G6 PTZ"},{"id":"bbbbbb222222","name":"North","is_ptz":true,"type":"UVC G6 PTZ"},{"id":"cccccc333333","name":"South","is_ptz":true,"type":"UVC G6 PTZ"}]'
+  run discover_id_suffix "$shared" aaaaaa111111
+  [ "$status" -eq 0 ]
+  [ "$output" = "111111" ]
+  run discover_id_suffix "$shared" bbbbbb222222
+  [ "$status" -eq 0 ]
+  [ "$output" = "222222" ]
+  run discover_id_suffix "$shared" cccccc333333
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}

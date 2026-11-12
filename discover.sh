@@ -70,12 +70,30 @@ discover_duplicate_name_groups() {
   jq -c '[.[] | select(.is_ptz == true or (.type | test("PTZ"; "i"))) | {name, id}] | group_by(.name) | map(select(length > 1))' <<< "$1"
 }
 
-# Format current tracking state and advertised support from discovery JSON.
+# Return a short id suffix only when this camera has a duplicate PTZ name.
+discover_id_suffix() {
+  local cameras_json=$1
+  local cam_id=$2
+  local duplicate_ids
+  duplicate_ids=$(discover_duplicate_names "$cameras_json") || return 1
+  if [[ $'\n'"$duplicate_ids"$'\n' == *$'\n'"$cam_id"$'\n'* ]]; then
+    printf '%s\n' "${cam_id: -6}"
+  fi
+}
+
+# Format complete per-camera discovery blocks, including tracking state.
 discover_tracking_lines() {
   jq -r '.[] |
-    "  Auto-tracking now: \(if ((.auto_tracking_types // .smartDetectSettings.autoTrackingObjectTypes // []) | length) == 0 then "off" else ((.auto_tracking_types // .smartDetectSettings.autoTrackingObjectTypes) | join(", ")) end)",
-    "  Tracking support: \(if (.feature_ptz // .featureFlags.isPtz) == null or (.feature_liveview_tracking // .featureFlags.hasLiveviewTracking) == null then "unknown" elif (.feature_ptz // .featureFlags.isPtz) and (.feature_liveview_tracking // .featureFlags.hasLiveviewTracking) then (["person"] + (if (.feature_vehicle_tracking // .featureFlags.supportPtzVehicleTracking) then ["vehicle"] else [] end) | join(", ")) else "unknown" end)",
-    "  Tracking with zoom: \(if (if .auto_tracking_with_zoom == null then .smartDetectSettings.autoTrackingWithZoom else .auto_tracking_with_zoom end) == null then "unknown" elif (if .auto_tracking_with_zoom == null then .smartDetectSettings.autoTrackingWithZoom else .auto_tracking_with_zoom end) then "on" else "off" end)"
+    "\n  \(.name)",
+    "  Model:            \(.type)",
+    "  ID:               \(.id)",
+    "  PTZ (firmware):   \(.is_ptz // .featureFlags.isPtz // false)",
+    "  Auto-tracking now: \(if (((.auto_tracking_types // .smartDetectSettings.autoTrackingObjectTypes) // []) | length) == 0 then "off" else ((.auto_tracking_types // .smartDetectSettings.autoTrackingObjectTypes) | join(", ")) end)",
+    "  Tracking support: \(if (if .feature_ptz == null then .featureFlags.isPtz else .feature_ptz end) == null or (if .feature_liveview_tracking == null then .featureFlags.hasLiveviewTracking else .feature_liveview_tracking end) == null then "unknown" elif (if .feature_ptz == null then .featureFlags.isPtz else .feature_ptz end) and (if .feature_liveview_tracking == null then .featureFlags.hasLiveviewTracking else .feature_liveview_tracking end) then (["person"] + (if (.feature_vehicle_tracking // .featureFlags.supportPtzVehicleTracking) then ["vehicle"] else [] end) | join(", ")) else "unknown" end)",
+    "  Tracking with zoom: \(if (if .auto_tracking_with_zoom == null then .smartDetectSettings.autoTrackingWithZoom else .auto_tracking_with_zoom end) == null then "unknown" elif (if .auto_tracking_with_zoom == null then .smartDetectSettings.autoTrackingWithZoom else .auto_tracking_with_zoom end) then "on" else "off" end)",
+    "  Current zoom:     \(.zoom_position // -1)%",
+    "  Presets:          \(.preset_count // 0)",
+    ((.presets // [])[] | "    Slot \(.slot): \(.name // "(unnamed)")  [pan=\(.ptz.pan // "?") tilt=\(.ptz.tilt // "?") zoom=\(.ptz.zoom // "?")]")
   ' <<< "$1"
 }
 
@@ -127,15 +145,6 @@ if (( count == 0 )); then
 fi
 
 echo "Found $count PTZ camera(s):"
-echo "$cameras" | jq -r '.[] |
-  "\n  \(.name)",
-  "  Model:            \(.type)",
-  "  ID:               \(.id)",
-  "  PTZ (firmware):   \(.is_ptz)",
-  "  Current zoom:     \(.zoom_position)%",
-  "  Presets:          \(.preset_count)",
-  (.presets[] | "    Slot \(.slot): \(.name // "(unnamed)")  [pan=\(.ptz.pan // "?") tilt=\(.ptz.tilt // "?") zoom=\(.ptz.zoom // "?")]")
-'
 discover_tracking_lines "$cameras"
 
 echo ""
@@ -151,7 +160,9 @@ for (( i = 0; i < count; i++ )); do
   echo "  $cam_name ($cam_id)"
   echo "    enabled:                    $enabled"
   echo "    dwell_seconds:              $(echo "$cam_config" | jq -r '.dwell_seconds // 30')"
-  echo "    preset_dwell_seconds:       $(echo "$cam_config" | jq -r '.preset_dwell_seconds // "none"')"
+  preset_dwell=$(echo "$cam_config" | jq -c 'if .preset_dwell_seconds == null then null else .preset_dwell_seconds end')
+  [[ "$preset_dwell" != "null" ]] || preset_dwell=none
+  echo "    preset_dwell_seconds:       $preset_dwell"
   echo "    path_mode:                  $(echo "$cam_config" | jq -r '.path_mode // "loop"')"
   echo "    auto_tracking_object_types: $(echo "$cam_config" | jq -c 'if .auto_tracking_object_types == null then ["person"] else .auto_tracking_object_types end')"
   echo "    auto_tracking_with_zoom:    $(echo "$cam_config" | jq -r 'if .auto_tracking_with_zoom == null then "camera setting" else .auto_tracking_with_zoom end')"
