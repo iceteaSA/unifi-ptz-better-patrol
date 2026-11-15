@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.4.2](https://github.com/iceteaSA/unifi-ptz-better-patrol/compare/v1.4.1...v1.4.2) (2026-11-15)
+
+
+### Bug Fixes
+
+* end a manual hold when the camera returns to its HomeView ([4c3ccff](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/4c3ccff88f07df06e4d7e5aa03995df4a1f2a112))
+* end a manual hold when the camera returns to its HomeView ([3f614de](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/3f614dedfba2e61eab6a694d535e5a3ff40d7345))
+
+
+### Documentation
+
+* state that a Home press also ends a manual hold ([f8a8579](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/f8a857958dd9a0855d5d814ab79588b678bce993))
+
 ## [1.4.1](https://github.com/iceteaSA/unifi-ptz-better-patrol/compare/v1.4.0...v1.4.1) (2026-11-15)
 
 
