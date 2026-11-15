@@ -15,6 +15,8 @@ CUE_FIRE_GOTO=1
 CUE_DELAY_SET=0
 CUE_FETCH_ADVANCE=0
 CUE_GOTO_CODE=500
+CUE_FIRE_ELAPSED=0
+CUE_EVENT_START=""
 
 printf() {
   if [[ "${1:-}" == -v && "${3:-}" == '%(%s)T' ]]; then
@@ -42,8 +44,18 @@ api_get() {
     if [[ "$CUE_MODE" == integration* ]] && [[ "$last_commanded_slot" != "$CUE_FIRE_SLOT" || "$FIELD_GOTOS" != "$CUE_FIRE_GOTO" ]]; then
       _LAST_BODY='[]'
     fi
+    if [[ "$CUE_MODE" == integration* ]] && (( FIELD_NOW - ${last_goto_ts:-0} < CUE_FIRE_ELAPSED )); then
+      _LAST_BODY='[]'
+    fi
     if [[ "$CUE_MODE" == integration-pending-lag && "$_LAST_BODY" != '[]' ]]; then
       FIELD_NOW=$(( FIELD_NOW + 2 )); CUE_NOW=$FIELD_NOW
+    fi
+    if [[ "$CUE_MODE" == repeat-stream ]]; then
+      local event_id
+      printf -v event_id 'eeeeeeee-eeee-eeee-eeee-%012d' "$CUE_POLLS"
+      _LAST_BODY=$(command jq -c --arg id "$event_id" --argjson start "$(( FIELD_NOW * 1000 ))" '
+        .[0:1] | .[0].id=$id | .[0].start=$start
+      ' <<< "$CUE_BODY")
     fi
     CUE_NOW=$(( CUE_NOW + CUE_FETCH_ADVANCE ))
   else
@@ -156,7 +168,7 @@ api_get_with_retry() {
 }
 
 api_get_preset_positions() {
-  if [[ "$CUE_MODE" == integration-acquisition || "$CUE_MODE" == integration-pending-lag || "$CUE_MODE" == integration-resume-unacquired ]]; then
+  if [[ "$CUE_MODE" == integration-acquisition || "$CUE_MODE" == integration-pending-lag || "$CUE_MODE" == integration-resume-unacquired || "$CUE_MODE" == integration-cue-manual ]]; then
     printf '[{"slot":0,"pan":7100,"tilt":10400,"zoom":97},{"slot":4,"pan":7100,"tilt":10400,"zoom":97},{"slot":2,"pan":11600,"tilt":10400,"zoom":97}]'
   else
     printf '[]'
@@ -164,7 +176,13 @@ api_get_preset_positions() {
 }
 
 api_get_ptz_position() {
-  if [[ "$CUE_MODE" == integration-pending-lag ]]; then
+  if [[ "$CUE_MODE" == integration-cue-manual ]]; then
+    if (( ${cue_in_progress:-0} && FIELD_NOW - ${last_goto_ts:-0} >= 15 )); then
+      printf '8800\t10400\t97\n'
+    else
+      printf '7100\t10400\t97\n'
+    fi
+  elif [[ "$CUE_MODE" == integration-pending-lag ]]; then
     if (( FIELD_GOTOS == 1 )); then printf '8800\t10400\t97\n'; else printf '11600\t10400\t97\n'; fi
   elif [[ "$CUE_MODE" == integration-resume-unacquired ]]; then
     if (( ${cue_in_progress:-0} )); then
@@ -215,7 +233,8 @@ api_post_status() {
 cue_integration_probe() {
   local config=$1
   CUE_MODE=${2:-integration}
-  CUE_BODY=$(cue_fixture "$(( (1000 + 6 * (CUE_FIRE_GOTO - 1)) * 1000 ))")
+  local event_start=${CUE_EVENT_START:-$(( (1000 + 6 * (CUE_FIRE_GOTO - 1)) * 1000 ))}
+  CUE_BODY=$(cue_fixture "$event_start")
   _STATUS_WEBHOOK_URL='https://example.invalid/webhook'
   FIELD_CONFIG="$config"
   export FIELD_CONFIG

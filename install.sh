@@ -1,4 +1,8 @@
 #!/bin/bash
+if [ -z "${BASH_VERSION:-}" ]; then
+    echo "install.sh needs bash: run 'sudo bash install.sh'" >&2
+    exit 1
+fi
 set -e
 
 # Repository information

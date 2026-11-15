@@ -1,4 +1,8 @@
 #!/bin/bash
+if [ -z "${BASH_VERSION:-}" ]; then
+    echo "uninstall.sh needs bash: run 'sudo bash uninstall.sh'" >&2
+    exit 1
+fi
 set -e
 
 # Check for root privileges

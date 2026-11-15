@@ -1098,6 +1098,8 @@ patrol_camera() {
   local -A cue_seen=()
   local cue_query="" cue_pending=-1 cue_match="" cue_in_progress=0 cue_resume=0 cue_hold=0
   local cue_matched_at=0 cue_poll_failed=0
+  # Failed-goto exhaustion clears last_commanded_slot. Retain the cue target.
+  local cue_slot=-1
   _patrol_parse_cues
 
   local constrain_info=""
@@ -1131,6 +1133,8 @@ patrol_camera() {
   log "$cam_name" "info" "Patrol: presets=[${presets[*]}] dwell=${dwell}s settle=${settle_seconds}s poll=${poll_interval_s}s hold=${motion_hold}s max_wait=${max_wait}s manual_hold=${manual_hold}s${sched_info}${dyn_info}${home_cycle_info}${preset_dwell_info}${path_info}"
 
   local idx=0
+  # Fresh zero-cooldown events must not keep a path step in a repeat loop.
+  local step_repeated=0
   local last_goto_ts=0
   local expected_pan=-1
   local expected_tilt=-1
@@ -1161,7 +1165,12 @@ patrol_camera() {
       cue_in_progress=0
       status_idle_state=patrolling
       status_cue_camera=""
-      log "$cam_name" "info" "Cue hold ended — resuming patrol"
+      log "$cam_name" "info" "Cue hold ended"
+      if [[ "${presets[$idx]}" == "$cue_slot" ]]; then
+        log "$cam_name" "debug" "Skipping slot $cue_slot — the cue just held it"
+        idx=$(( (idx + 1) % ${#presets[@]} ))
+        step_repeated=0
+      fi
     fi
     api_ensure_auth
 
@@ -1398,6 +1407,7 @@ patrol_camera() {
       # Advance to next preset — tracking served as the dwell for this one,
       # so don't snap back to the same position the camera just tracked away from
       idx=$(( (idx + 1) % ${#presets[@]} ))
+      step_repeated=0
       # Home between cycles: visit home position when cycle wraps
       if [[ "$home_between_cycles" == "true" ]] && (( idx == 0 )); then
         settle_seconds=$camera_settle_seconds
@@ -1411,6 +1421,7 @@ patrol_camera() {
     fi
     if (( cue_pending >= 0 )); then
       slot=${cue_slots[$cue_pending]}
+      cue_slot=$slot
       cue_hold=${cue_holds[$cue_pending]}
       status_cue_camera=${cue_names[$cue_pending]}
       status_idle_state=cued
@@ -1466,13 +1477,19 @@ patrol_camera() {
       404)
         status_slot=""
         log "$cam_name" "error" "Preset slot $slot not found (HTTP 404) — advancing"
-        (( cue_in_progress )) || idx=$(( (idx + 1) % ${#presets[@]} ))
+        if (( cue_in_progress == 0 )); then
+          idx=$(( (idx + 1) % ${#presets[@]} ))
+          step_repeated=0
+        fi
         continue
         ;;
       "")
         status_slot=""
         log "$cam_name" "error" "No response from goto command — advancing"
-        (( cue_in_progress )) || idx=$(( (idx + 1) % ${#presets[@]} ))
+        if (( cue_in_progress == 0 )); then
+          idx=$(( (idx + 1) % ${#presets[@]} ))
+          step_repeated=0
+        fi
         continue
         ;;
       *)
@@ -1620,7 +1637,12 @@ patrol_camera() {
       continue  # Skip advancing — go back to top of loop (hold/tracking checks)
     fi
 
-    idx=$(( (idx + 1) % ${#presets[@]} ))
+    if (( cue_pending < 0 || step_repeated || (slot_dwell - dwell_remaining) * 2 >= slot_dwell )); then
+      idx=$(( (idx + 1) % ${#presets[@]} ))
+      step_repeated=0
+    else
+      step_repeated=1
+    fi
     (( cue_pending < 0 )) || continue
 
     # Home between cycles: visit home position when cycle wraps back to first preset

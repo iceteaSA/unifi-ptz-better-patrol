@@ -142,31 +142,32 @@ load cue_test_helper
   assert_contains "$output" '__first=-1 rc=1'
 }
 
-@test "cue interrupts a loop dwell and resumes exactly the next step" {
+@test "cue interrupts a short loop look and repeats exactly that step" {
   run cue_integration_probe '{"dwell_seconds":6,"ptz_settle_seconds":0,"cues":[{"camera_id":"fixed1","slot":2,"hold_seconds":5}]}'
   [ "$status" -eq 0 ]
   assert_contains "$output" '__goto=0 now=1000 idx=0'
-  assert_contains "$output" '__goto=2 now=1002 idx=1'
-  assert_contains "$output" '__goto=4 now=1007 idx=1'
-  assert_contains "$output" 'Cue hold ended — resuming patrol'
+  assert_contains "$output" '__goto=2 now=1002 idx=0'
+  assert_contains "$output" '__goto=0 now=1007 idx=0'
+  assert_contains "$output" 'Cue hold ended'
+  assert_not_contains "$output" 'Cue hold ended — resuming patrol'
   assert_not_contains "$output" '__forbidden_cue_poll'
 }
 
 @test "pingpong resumes its inner reverse step after a cue" {
-  CUE_FIRE_SLOT=2 CUE_FIRE_GOTO=3
+  CUE_FIRE_SLOT=2 CUE_FIRE_GOTO=3 CUE_FIRE_ELAPSED=4
   run cue_integration_probe '{"path_mode":"pingpong","dwell_seconds":6,"ptz_settle_seconds":0,"cues":[{"camera_id":"fixed1","slot":0,"hold_seconds":5}]}' integration 6
   [ "$status" -eq 0 ]
-  assert_contains "$output" '__goto=0 now=1014 idx=3'
-  assert_contains "$output" '__goto=4 now=1019 idx=3'
+  assert_contains "$output" '__goto=0 now=1016 idx=3'
+  assert_contains "$output" '__goto=4 now=1021 idx=3'
 }
 
 @test "a cue on wrap skips home but the next ordinary wrap visits home" {
-  CUE_FIRE_SLOT=2 CUE_FIRE_GOTO=3
+  CUE_FIRE_SLOT=2 CUE_FIRE_GOTO=3 CUE_FIRE_ELAPSED=4
   run cue_integration_probe '{"home_between_cycles":true,"dwell_seconds":6,"ptz_settle_seconds":0,"cues":[{"camera_id":"fixed1","slot":4,"hold_seconds":5}]}' integration 8
   [ "$status" -eq 0 ]
-  assert_contains "$output" '__goto=4 now=1014 idx=0'
-  assert_contains "$output" '__goto=0 now=1019 idx=0'
-  assert_contains "$output" '__goto=-1 now=1037 idx=0'
+  assert_contains "$output" '__goto=4 now=1016 idx=0'
+  assert_contains "$output" '__goto=0 now=1021 idx=0'
+  assert_contains "$output" '__goto=-1 now=1039 idx=0'
 }
 
 @test "a cue during home dwell resumes at index zero" {
@@ -178,10 +179,10 @@ load cue_test_helper
   assert_contains "$output" '__goto=0 now=1025 idx=0'
 }
 
-@test "activity after a cue does not dynamically skip the next step" {
+@test "activity after a cue does not dynamically skip the selected repeat step" {
   run cue_integration_probe '{"dynamic_auto_tracking":true,"dwell_seconds":6,"ptz_settle_seconds":0,"cues":[{"camera_id":"fixed1","slot":2,"hold_seconds":5}]}' integration-activity 4
   [ "$status" -eq 0 ]
-  assert_contains "$output" '__goto=4 now=1009 idx=1'
+  assert_contains "$output" '__goto=0 now=1009 idx=0'
   assert_contains "$output" '__status=holding_activity source=null slot=2'
   assert_not_contains "$output" '__forbidden_cue_poll'
 }
@@ -202,7 +203,7 @@ load cue_test_helper
   run cue_integration_probe '{"dwell_seconds":6,"ptz_settle_seconds":0,"cues":[{"camera_id":"fixed1","slot":2,"hold_seconds":5}]}' integration-reject 4
   [ "$status" -eq 0 ]
   assert_contains "$output" 'Preset slot 2 not found'
-  assert_contains "$output" '__goto=4 now=1002 idx=1'
+  assert_contains "$output" '__goto=0 now=1002 idx=0'
 }
 
 @test "cue status carries source then normal patrol clears it" {
@@ -234,21 +235,21 @@ load cue_test_helper
   assert_contains "$output" 'Goto target not acquired — live position remains off target'
   assert_contains "$output" 'Re-issued goto for slot 2 after failed execution (attempt 1/2'
   assert_contains "$output" 'Goto slot 2 still has not taken effect after 2 retries — advancing patrol'
-  assert_contains "$output" '__goto=4'
+  assert_contains "$output" '__goto=0 now=1014 idx=0'
   assert_not_contains "$output" 'External control detected'
 }
 
 @test "pending cue replaces an unacquired normal target without reissuing it" {
   run cue_integration_probe '{"dwell_seconds":6,"ptz_settle_seconds":3,"cues":[{"camera_id":"fixed1","slot":2,"hold_seconds":5}]}' integration-pending-lag 3
   [ "$status" -eq 0 ]
-  assert_contains "$output" '__goto=2 now=1004 idx=1'
+  assert_contains "$output" '__goto=2 now=1004 idx=0'
   assert_not_contains "$output" 'Re-issued goto for slot 0'
 }
 
 @test "completed cue with unreadable positions resumes without reissuing the cue" {
   run cue_integration_probe '{"dwell_seconds":6,"ptz_settle_seconds":0,"cues":[{"camera_id":"fixed1","slot":2,"hold_seconds":5}]}' integration-resume-unacquired 3
   [ "$status" -eq 0 ]
-  assert_contains "$output" '__goto=4 now=1007 idx=1'
+  assert_contains "$output" '__goto=0 now=1007 idx=0'
   assert_not_contains "$output" 'Re-issued goto for slot 2'
 }
 

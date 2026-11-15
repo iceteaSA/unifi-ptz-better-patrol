@@ -1,0 +1,3 @@
+#!/bin/sh
+# Keep rejected-shell tests non-root if the early interpreter check is removed.
+printf '1000\n'
