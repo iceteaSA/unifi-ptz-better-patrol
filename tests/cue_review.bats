@@ -2,11 +2,11 @@
 
 load cue_test_helper
 
-@test "pending cue expires across a schedule pause and resumes the next path step" {
+@test "pending cue expires across a schedule pause and resumes the selected path step" {
   run cue_integration_probe '{"dynamic_auto_tracking":true,"dwell_seconds":6,"ptz_settle_seconds":0,"cues":[{"camera_id":"fixed1","slot":2}]}' integration-expiry-schedule 2
   [ "$status" -eq 0 ]
   assert_contains "$output" 'Cue dropped — 60s old'
-  assert_contains "$output" '__goto=4 now=1062 idx=1'
+  assert_contains "$output" '__goto=0 now=1062 idx=0'
   assert_not_contains "$output" '__goto=2'
 }
 
@@ -15,23 +15,23 @@ load cue_test_helper
   [ "$status" -eq 0 ]
   assert_contains "$output" 'Manual control hold expired'
   assert_contains "$output" 'Cue dropped — 20s old'
-  assert_contains "$output" '__goto=4 now=1022 idx=1'
+  assert_contains "$output" '__goto=0 now=1022 idx=0'
   assert_not_contains "$output" '__goto=2'
 }
 
 @test "pending cue survives a five-second top activity hold" {
   run cue_integration_probe '{"dynamic_auto_tracking":true,"dwell_seconds":6,"ptz_settle_seconds":0,"cues":[{"camera_id":"fixed1","slot":2,"hold_seconds":5}]}' integration-expiry-short 3
   [ "$status" -eq 0 ]
-  assert_contains "$output" '__goto=2 now=1007 idx=1'
-  assert_contains "$output" '__goto=4 now=1012 idx=1'
+  assert_contains "$output" '__goto=2 now=1007 idx=0'
+  assert_contains "$output" '__goto=0 now=1012 idx=0'
   assert_not_contains "$output" 'Cue dropped'
 }
 
-@test "expired cue after a top activity hold does not dynamically skip the next step" {
+@test "expired cue after a top activity hold does not dynamically skip the selected step" {
   run cue_integration_probe '{"dynamic_auto_tracking":true,"dwell_seconds":6,"ptz_settle_seconds":0,"cues":[{"camera_id":"fixed1","slot":2}]}' integration-expiry-activity 2
   [ "$status" -eq 0 ]
   assert_contains "$output" 'Cue dropped — 20s old'
-  assert_contains "$output" '__goto=4 now=1022 idx=1'
+  assert_contains "$output" '__goto=0 now=1022 idx=0'
   assert_not_contains "$output" '__goto=2'
 }
 
@@ -39,7 +39,7 @@ load cue_test_helper
   run cue_integration_probe '{"dwell_seconds":6,"ptz_settle_seconds":0,"cues":[{"camera_id":"fixed1","slot":2}]}' integration-expiry-unreadable 2
   [ "$status" -eq 0 ]
   assert_contains "$output" 'Cue dropped — 20s old'
-  assert_contains "$output" '__goto=4 now=1022 idx=1'
+  assert_contains "$output" '__goto=0 now=1022 idx=0'
   assert_not_contains "$output" '__goto=2'
 }
 
@@ -116,7 +116,7 @@ load cue_test_helper
     run cue_integration_probe '{"dwell_seconds":6,"ptz_settle_seconds":0,"cues":[{"camera_id":"fixed1","slot":2,"hold_seconds":5}]}' integration-unexpected 3
     [ "$status" -eq 0 ]
     assert_contains "$output" "Unexpected HTTP $code on goto slot 2"
-    assert_contains "$output" '__goto=4 now=1002 idx=1'
+    assert_contains "$output" '__goto=0 now=1002 idx=0'
     assert_not_contains "$output" '__status=cued'
   done
 }
