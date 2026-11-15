@@ -198,7 +198,7 @@ Patrol checks cues at preset and home dwell polls, after activity and manual-con
 
 The cue uses the usual goto, target acquisition, retry, drift, and HomeView checks. It uses `hold_seconds` for the dwell. The PTZ's own activity can extend that dwell through the usual hold. The maximum is `max_tracking_wait` while the camera is readable. Cues do not extend a cue hold.
 
-The path step that the cue stopped counts as complete only after half of that slot's dwell time. An earlier cue causes patrol to repeat that path step after the cue. At half of the dwell time or more, patrol uses the next path step. This also applies on a `pingpong` path. If that advance ends a cycle, patrol skips that cycle's home visit. A cue from a home dwell resumes at the first path step.
+If a cue stops a path step before half of that slot's dwell time, patrol repeats the step after the cue. Cues can cause only one repeat per path step. A second early cue counts that step as complete. The limit also applies with `cooldown_seconds: 0`. When the path advances, the next step can repeat one time. At half of the dwell time or more, patrol uses the next path step. This also applies on a `pingpong` path. If that advance ends a cycle, patrol skips that cycle's home visit. A cue from a home dwell resumes at the first path step, or the second if the cue held the first step's slot.
 
 When a cue hold ends, patrol logs `Cue hold ended`. Activity or manual control can keep patrol on hold after this line. If the next normal path step is the cue slot, patrol skips that one step. It logs `Skipping slot N — the cue just held it` at debug level. This skip does not visit home on a cycle wrap. It applies to completed and interrupted cue holds, exhausted goto retries, and rejected cue commands.
 

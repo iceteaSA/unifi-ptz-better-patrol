@@ -50,6 +50,13 @@ api_get() {
     if [[ "$CUE_MODE" == integration-pending-lag && "$_LAST_BODY" != '[]' ]]; then
       FIELD_NOW=$(( FIELD_NOW + 2 )); CUE_NOW=$FIELD_NOW
     fi
+    if [[ "$CUE_MODE" == repeat-stream ]]; then
+      local event_id
+      printf -v event_id 'eeeeeeee-eeee-eeee-eeee-%012d' "$CUE_POLLS"
+      _LAST_BODY=$(command jq -c --arg id "$event_id" --argjson start "$(( FIELD_NOW * 1000 ))" '
+        .[0:1] | .[0].id=$id | .[0].start=$start
+      ' <<< "$CUE_BODY")
+    fi
     CUE_NOW=$(( CUE_NOW + CUE_FETCH_ADVANCE ))
   else
     _LAST_BODY='{"name":"Fixed One"}'
