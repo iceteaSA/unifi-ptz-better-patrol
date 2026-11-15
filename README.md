@@ -202,9 +202,13 @@ The path step that the cue stopped counts as complete. After the cue, patrol use
 
 Patrol sends the cue goto one time. The usual bounded goto retries can send that command again. Dynamic tracking does not skip the next path step after a cue.
 
+Before the cue goto, patrol checks the time since the cue match. After more than 15 seconds, patrol drops the cue. This also applies after a schedule pause, manual hold, activity hold, or unreadable camera state. It logs `Cue dropped — <age>s old` and uses the next path step. Dynamic tracking does not skip that step.
+
 Patrol reads smart-detection events from the last 15 seconds. An event can become available while cue checks are off. It can fire when checks start again, but only in that 15-second window. Protect lists new events about 3 seconds after their start. Patrol ignores the event's `end` field. It uses each event id only one time.
 
 Missing or empty `cues` adds no poll or goto processes and no HTTP requests. An empty event poll starts one curl and no jq. An event request error gives no cue and does not stop patrol.
+
+The first event request error logs one warning with the HTTP code and curl exit code. This includes a JSON parse error. More errors give no new warning until an event request succeeds. That success logs `Cue poll recovered`, also for an empty `[]` response. Usual empty polls give no log line.
 
 ### Patrol Schedule
 

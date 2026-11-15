@@ -505,37 +505,37 @@ _patrol_parse_tracking_config() {
 # Writes cue_camera_ids, cue_slots, cue_types, cue_holds, cue_cooldowns,
 # cue_names, cue_until and cue_query. Reads cam_config and the preset lists.
 _patrol_parse_cues() {
-  local source slot hold cooldown types name info=""
+  local src slot hold cooldown types name info=""
   local discovery=${cam_discovery_json:-}
   [[ -n "$discovery" ]] || discovery='{}'
   local -A names=()
-  while IFS=$'\t' read -r source slot hold cooldown types; do
-    if [[ "$source" == invalid ]]; then
+  while IFS=$'\t' read -r src slot hold cooldown types; do
+    if [[ "$src" == invalid ]]; then
       log "$cam_name" "warn" "Invalid cues entry $slot — ignoring"
       continue
     fi
-    source=${source#camera:}
-    if [[ -z "${names[$source]+x}" ]]; then
+    src=${src#camera:}
+    if [[ -z "${names[$src]+x}" ]]; then
       name=""
-      api_get "/cameras/$source"
+      api_get "/cameras/$src"
       if [[ "$_LAST_HTTP_CODE" == 200 ]]; then
         name=$(jq -r 'if (.name | type) == "string" then .name else "" end' <<< "$_LAST_BODY" 2>/dev/null) || name=""
       fi
       if [[ -z "$name" ]]; then
-        name=$source
-        log "$cam_name" "warn" "Cannot resolve cue camera $source — using id"
+        name=$src
+        log "$cam_name" "warn" "Cannot resolve cue camera $src — using id"
       fi
-      names["$source"]=$name
-      cue_query+="&cameras=$source"
+      names["$src"]=$name
+      cue_query+="&cameras=$src"
     fi
-    cue_camera_ids+=("$source")
+    cue_camera_ids+=("$src")
     cue_slots+=("$slot")
     cue_holds+=("$hold")
     cue_cooldowns+=("$cooldown")
     cue_types+=($'\t'"$types"$'\t')
-    cue_names+=("${names[$source]}")
+    cue_names+=("${names[$src]}")
     cue_until+=(0)
-    info+="${info:+, }${names[$source]}→$slot"
+    info+="${info:+, }${names[$src]}→$slot"
   done < <(jq -r --arg self "$cam_id" \
     --argjson positions "${preset_positions:-[]}" --argjson discovery "$discovery" '
     def integer: type == "number" and floor == .;
@@ -563,9 +563,11 @@ _patrol_parse_cues() {
 }
 
 # Reads the caller's cue arrays and last_commanded_slot. Writes cue_seen,
-# cue_pending, cue_match and cue_until. An optional poll error must not hold patrol.
+# cue_pending, cue_match, cue_matched_at, cue_until and cue_poll_failed.
+# A poll error must not hold patrol.
 _patrol_poll_cues() {
-  local now cutoff id source start types rows i j type
+  local now cutoff id src start types rows i j etype
+  local poll_error=0
   local -a event_cameras=() event_types=() tokens=()
   cue_pending=-1
   printf -v now '%(%s)T' -1
@@ -575,25 +577,42 @@ _patrol_poll_cues() {
     if (( start < cutoff )); then unset 'cue_seen[$id]'; fi
   done
   api_get "/events?start=$cutoff&end=$(( now * 1000 ))&types=smartDetectZone$cue_query"
-  [[ "$_LAST_HTTP_CODE" == 200 && "$_LAST_BODY" != '[]' ]] || return 1
-  rows=$(jq -r '
-    if type != "array" then error("invalid events") else .[] end
-    | select(type == "object")
-    | select((.id | type) == "string" and (.id | length) > 0
-      and (.camera | type) == "string" and (.start | type) == "number"
-      and (.start | floor) == .start and (.smartDetectTypes | type) == "array")
-    | [(.id | tojson), (.camera | tojson), (.start | tostring)]
-      + [.smartDetectTypes[] | select(type == "string" and length > 0) | tojson]
-    | join("\t")
-  ' <<< "$_LAST_BODY" 2>/dev/null) || return 1
+  if [[ "$_LAST_HTTP_CODE" != 200 ]]; then
+    poll_error=1
+  elif [[ "$_LAST_BODY" != '[]' ]]; then
+    rows=$(jq -rs '
+      if length != 1 then error("invalid events") else .[0] end
+      | if type != "array" then error("invalid events") else .[] end
+      | select(type == "object")
+      | select((.id | type) == "string" and (.id | length) > 0
+        and (.camera | type) == "string" and (.start | type) == "number"
+        and (.start | floor) == .start and (.smartDetectTypes | type) == "array")
+      | [(.id | tojson), (.camera | tojson), (.start | tostring)]
+        + [.smartDetectTypes[] | select(type == "string" and length > 0) | tojson]
+      | join("\t")
+    ' <<< "$_LAST_BODY" 2>/dev/null) || poll_error=1
+  fi
+  if (( poll_error )); then
+    if (( cue_poll_failed == 0 )); then
+      log "$cam_name" "warn" "Cue poll failed (HTTP $_LAST_HTTP_CODE, curl rc $_LAST_CURL_RC) — cues paused until the events request succeeds"
+    fi
+    cue_poll_failed=1
+    return 1
+  fi
+  if (( cue_poll_failed )); then
+    log "$cam_name" "info" "Cue poll recovered"
+    cue_poll_failed=0
+  fi
+  [[ "$_LAST_BODY" != '[]' ]] || return 1
   printf -v now '%(%s)T' -1
   cutoff=$(( (now - 15) * 1000 ))
-  while IFS=$'\t' read -r id source start types; do
+  while IFS=$'\t' read -r id src start types; do
     [[ -n "$id" && -n "$types" ]] || continue
+    [[ "$start" =~ ^[0-9]+$ ]] || continue
     (( start >= cutoff && start <= now * 1000 )) || continue
     [[ -z "${cue_seen[$id]+x}" ]] || continue
     cue_seen["$id"]=$start
-    event_cameras+=("$source")
+    event_cameras+=("$src")
     event_types+=("$types")
   done <<< "$rows"
   for (( i=0; i<${#cue_slots[@]}; i++ )); do
@@ -602,10 +621,11 @@ _patrol_poll_cues() {
     for (( j=0; j<${#event_cameras[@]}; j++ )); do
       [[ "${event_cameras[$j]}" == "\"${cue_camera_ids[$i]}\"" ]] || continue
       IFS=$'\t' read -r -a tokens <<< "${event_types[$j]}"
-      for type in "${tokens[@]}"; do
-        if [[ "${cue_types[$i]}" == *$'\t'"$type"$'\t'* ]]; then
+      for etype in "${tokens[@]}"; do
+        if [[ "${cue_types[$i]}" == *$'\t'"$etype"$'\t'* ]]; then
           cue_pending=$i
-          cue_match=${type:1:${#type}-2}
+          cue_match=${etype:1:${#etype}-2}
+          cue_matched_at=$now
           cue_until[i]=$(( now + cue_cooldowns[i] ))
           log "$cam_name" "info" "Cue: ${cue_names[$i]} $cue_match → slot ${cue_slots[$i]}"
           return 0
@@ -1077,6 +1097,7 @@ patrol_camera() {
   local -a cue_camera_ids=() cue_slots=() cue_types=() cue_holds=() cue_cooldowns=() cue_names=() cue_until=()
   local -A cue_seen=()
   local cue_query="" cue_pending=-1 cue_match="" cue_in_progress=0 cue_resume=0 cue_hold=0
+  local cue_matched_at=0 cue_poll_failed=0
   _patrol_parse_cues
 
   local constrain_info=""
@@ -1359,6 +1380,15 @@ patrol_camera() {
     if (( activity_active == 0 )); then
       _patrol_status_tick patrolling
     fi
+    if (( cue_pending >= 0 )); then
+      printf -v now '%(%s)T' -1
+      local cue_age=$(( now - cue_matched_at ))
+      if (( cue_age > 15 )); then
+        cue_pending=-1
+        cue_resume=1
+        log "$cam_name" "info" "Cue dropped — ${cue_age}s old"
+      fi
+    fi
     # Dynamic auto-tracking: tracking may have moved the camera, so reset
     # expected position and advance to next preset (don't snap back).
     if [[ "$dyn_tracking" == "true" ]] && (( tracking_enabled == 1 && waited > 0 && cue_resume == 0 && cue_pending < 0 )); then
@@ -1448,6 +1478,7 @@ patrol_camera() {
       *)
         status_slot=""
         log "$cam_name" "warn" "Unexpected HTTP $code on goto slot $slot"
+        (( cue_in_progress == 0 )) || continue
         ;;
     esac
 

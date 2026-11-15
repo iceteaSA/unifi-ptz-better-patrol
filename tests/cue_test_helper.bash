@@ -12,6 +12,9 @@ CUE_MODE=""
 CUE_ACTIVITY_READS=0
 CUE_FIRE_SLOT=0
 CUE_FIRE_GOTO=1
+CUE_DELAY_SET=0
+CUE_FETCH_ADVANCE=0
+CUE_GOTO_CODE=500
 
 printf() {
   if [[ "${1:-}" == -v && "${3:-}" == '%(%s)T' ]]; then
@@ -42,6 +45,7 @@ api_get() {
     if [[ "$CUE_MODE" == integration-pending-lag && "$_LAST_BODY" != '[]' ]]; then
       FIELD_NOW=$(( FIELD_NOW + 2 )); CUE_NOW=$FIELD_NOW
     fi
+    CUE_NOW=$(( CUE_NOW + CUE_FETCH_ADVANCE ))
   else
     _LAST_BODY='{"name":"Fixed One"}'
   fi
@@ -56,9 +60,11 @@ cue_fixture() {
 
 cue_poll_probe() {
   local mode=$1 cam_name=Overwatch last_commanded_slot=0
+  local _LAST_TRACKING_ACTIVE=0 _LAST_ACTIVITY_KNOWN=1
   local -a cue_camera_ids=(fixed1 fixed2) cue_slots=(4 2) cue_types=($'\t"person"\t' $'\t"animal"\t')
   local -a cue_holds=(30 30) cue_cooldowns=(0 0) cue_names=(One Two) cue_until=(0 0)
   local cue_query='&cameras=fixed1&cameras=fixed2' cue_pending=-1 cue_match=""
+  local -x cue_matched_at=0 cue_poll_failed=0
   local -A cue_seen=()
   CUE_BODY=$(cue_fixture)
   case "$mode" in
@@ -71,10 +77,15 @@ cue_poll_probe() {
     closed) CUE_BODY=$(jq -c '.[].end=1' <<< "$CUE_BODY") ;;
     nested) CUE_BODY=$(jq -c '.[].camera="unknown" | .[].description.messageKeys[0].params.deviceId="fixed1"' <<< "$CUE_BODY") ;;
     multi-type) CUE_BODY=$(jq -c '.[0:1] | .[0].smartDetectTypes=["vehicle","person"]' <<< "$CUE_BODY") ;;
+    future) CUE_BODY=$(cue_fixture 1001000) ;;
+    fetch-stale) CUE_FETCH_ADVANCE=20 ;;
+    fetch-valid) CUE_FETCH_ADVANCE=5 ;;
+    scientific) CUE_BODY=$(cue_fixture 1e30) ;;
   esac
   local rc=0
   _patrol_poll_cues || rc=$?
   printf '__first=%s rc=%s until=%s seen=%s\n' "$cue_pending" "$rc" "${cue_until[0]}" "${#cue_seen[@]}"
+  printf '__matched_at=%s\n' "$cue_matched_at"
   if [[ "$mode" == duplicate ]]; then
     CUE_NOW=1001
     _patrol_poll_cues || true
@@ -117,7 +128,17 @@ sleep() {
 
 api_get_camera_state() {
   _CACHED_CAM_STATE='{"id":"cam1","state":"CONNECTED"}'
-  if [[ "$CUE_MODE" == integration-activity ]] && (( FIELD_GOTOS == 2 && CUE_ACTIVITY_READS < 2 )); then
+  if [[ "$CUE_MODE" == integration-expiry-unreadable ]] && (( ${cue_pending:--1} >= 0 && CUE_ACTIVITY_READS < 4 )); then
+    CUE_ACTIVITY_READS=$(( CUE_ACTIVITY_READS + 1 ))
+    return 1
+  elif [[ "$CUE_MODE" == integration-expiry-activity || "$CUE_MODE" == integration-expiry-short ]] && (( ${cue_pending:--1} >= 0 )); then
+    local activity_limit=4
+    [[ "$CUE_MODE" != integration-expiry-short ]] || activity_limit=1
+    if (( CUE_ACTIVITY_READS < activity_limit )); then
+      CUE_ACTIVITY_READS=$(( CUE_ACTIVITY_READS + 1 ))
+      _CACHED_CAM_STATE='{"id":"cam1","state":"CONNECTED","isAutoTracking":true}'
+    fi
+  elif [[ "$CUE_MODE" == integration-activity ]] && (( FIELD_GOTOS == 2 && CUE_ACTIVITY_READS < 2 )); then
     CUE_ACTIVITY_READS=$(( CUE_ACTIVITY_READS + 1 ))
     _CACHED_CAM_STATE='{"id":"cam1","state":"CONNECTED","isAutoTracking":true}'
   elif [[ "$CUE_MODE" == integration-block* ]] && (( FIELD_GOTOS == 1 && FIELD_NOW <= 1005 )); then
@@ -162,12 +183,29 @@ api_get_ptz_position() {
 
 set_auto_tracking() { return 0; }
 
+api_ensure_auth() {
+  if [[ "$CUE_MODE" == integration-expiry-manual ]] && (( ${cue_pending:--1} >= 0 && CUE_DELAY_SET == 0 )); then
+    # shellcheck disable=SC2034 # patrol_camera reads this caller-scope hold deadline.
+    external_control_until=$(( FIELD_NOW + 20 ))
+    CUE_DELAY_SET=1
+  fi
+}
+
+is_within_schedule() {
+  if [[ "$CUE_MODE" == integration-expiry-schedule ]] && (( ${cue_pending:--1} >= 0 && CUE_DELAY_SET == 0 )); then
+    CUE_DELAY_SET=1
+    return 1
+  fi
+  return 0
+}
+
 api_post_with_retry() {
   FIELD_GOTOS=$(( FIELD_GOTOS + 1 ))
   printf '__goto=%s now=%s idx=%s acquisition=%s cue=%s polls=%s\n' "${1##*/}" "$FIELD_NOW" "${idx:--1}" "${acquisition_state:-none}" "$cue_in_progress" "$CUE_POLLS" >&2
   if (( FIELD_GOTOS >= FIELD_LIMIT )); then exit 0; fi
   _LAST_HTTP_CODE=200
   if [[ "$CUE_MODE" == integration-reject ]] && (( cue_in_progress )); then _LAST_HTTP_CODE=404; fi
+  if [[ "$CUE_MODE" == integration-unexpected ]] && (( cue_in_progress )); then _LAST_HTTP_CODE=$CUE_GOTO_CODE; fi
 }
 
 api_post_status() {
@@ -182,8 +220,36 @@ cue_integration_probe() {
   FIELD_CONFIG="$config"
   export FIELD_CONFIG
   FIELD_LIMIT=${3:-5}
-  FIELD_GOTOS=0 FIELD_NOW=1000 CUE_NOW=1000 CUE_POLLS=0
+  FIELD_GOTOS=0 FIELD_NOW=1000 CUE_NOW=1000 CUE_POLLS=0 CUE_ACTIVITY_READS=0 CUE_DELAY_SET=0
   patrol_camera cam1 Overwatch "$FIELD_DISCOVERY"
+}
+
+cue_failure_sequence_probe() {
+  local mode=$1 cam_name=Overwatch last_commanded_slot=0
+  local _LAST_TRACKING_ACTIVE=0 _LAST_ACTIVITY_KNOWN=1
+  local -a cue_camera_ids=(fixed1) cue_slots=(4) cue_types=($'\t"person"\t')
+  local -a cue_holds=(30) cue_cooldowns=(120) cue_names=(One) cue_until=(0)
+  local -x cue_query='&cameras=fixed1' cue_pending=-1 cue_match="" cue_matched_at=0 cue_poll_failed=0
+  local -A cue_seen=()
+  CUE_BODY='[]'
+  case "$mode" in
+    http) CUE_CODE=503 ;;
+    curl) CUE_CODE=000; _LAST_CURL_RC=28 ;;
+    parse) CUE_BODY='not-json' ;;
+    parse-empty) CUE_BODY='' ;;
+    parse-object) CUE_BODY='{}' ;;
+  esac
+  _patrol_poll_cues || true
+  printf '__failure1 warnings=%s failed=%s\n' "$CUE_WARNINGS" "$cue_poll_failed"
+  _patrol_poll_cues || true
+  printf '__failure2 warnings=%s failed=%s\n' "$CUE_WARNINGS" "$cue_poll_failed"
+  CUE_CODE=200; _LAST_CURL_RC=0
+  if [[ "$mode" == http ]]; then CUE_BODY=$(cue_fixture); else CUE_BODY='[]'; fi
+  _patrol_poll_cues || true
+  printf '__success1 failed=%s\n' "$cue_poll_failed"
+  CUE_BODY='[]'
+  _patrol_poll_cues || true
+  printf '__success2 failed=%s\n' "$cue_poll_failed"
 }
 
 cue_discovery_probe() {
