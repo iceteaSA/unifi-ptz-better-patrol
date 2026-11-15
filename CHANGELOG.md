@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.4.1](https://github.com/iceteaSA/unifi-ptz-better-patrol/compare/v1.4.0...v1.4.1) (2026-11-15)
+
+
+### Bug Fixes
+
+* bound repeated preset looks and document home-cue resume ([664f6c2](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/664f6c2a31577e3cfc1a1521445414def9abad01))
+* clarify cue resume and avoid short or repeated preset looks ([8e3728c](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/8e3728c803dab092798fbd4e2f834fcdf1a5e34e))
+* cue resume follow-ups and installer shell check ([43cb84f](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/43cb84f414820a623e08d00402205d314aefc7ea))
+* refuse to run the installer without bash ([2450d74](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/2450d7461c993e73e8353e3a68967ab3c7fef200))
+
 ## [1.4.0](https://github.com/iceteaSA/unifi-ptz-better-patrol/compare/v1.3.0...v1.4.0) (2026-11-15)
 
 
