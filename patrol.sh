@@ -40,6 +40,7 @@ is_externally_controlled() {
   _LAST_DRIFT_MAGNITUDE=0
   _LAST_GOTO_FAILED=0
   _LAST_AT_HOMEVIEW=0
+  _LAST_HOME_PAN=-1; _LAST_HOME_TILT=-1; _LAST_HOME_ZOOM=-1
   _LAST_ACQUISITION_STATE=$acquisition_state
   _LAST_ACQUISITION_STREAK=$acquisition_streak
 
@@ -127,6 +128,7 @@ is_externally_controlled() {
     if home_fields=$(api_get_ptz_home "$cam_id"); then
       IFS=$'\t' read -r home_pan home_tilt home_zoom <<< "$home_fields"
       if [[ "$home_pan" =~ ^[0-9]+$ && "$home_tilt" =~ ^[0-9]+$ && "$home_zoom" =~ ^[0-9]+$ ]]; then
+        _LAST_HOME_PAN=$home_pan; _LAST_HOME_TILT=$home_tilt; _LAST_HOME_ZOOM=$home_zoom
         pan_diff=$(( live_pan - home_pan )); pan_diff=${pan_diff#-}
         tilt_diff=$(( live_tilt - home_tilt )); tilt_diff=${tilt_diff#-}
         zoom_diff=$(( live_zoom - home_zoom )); zoom_diff=${zoom_diff#-}
@@ -706,6 +708,7 @@ _patrol_refresh_camera_name() {
 #   last_goto_ts expected_pan expected_tilt expected_zoom
 #   acquisition_state acquisition_streak
 #   tracking_enabled external_control_until cam_name protect_name cue_pending
+#   hold_home_pan hold_home_tilt hold_home_zoom hold_home_streak
 #
 # Returns 0 if dwell completed normally, 1 if interrupted (caller should
 # continue back to the top of the main patrol loop).
@@ -850,6 +853,8 @@ _patrol_home_dwell() {
         # and zoom's different motor-step scales while rejecting convergence.
         if (( home_drift_streak > 0 && _LAST_DRIFT_MAGNITUDE * 4 >= home_previous_drift * 3 )); then
           external_control_until=$(( $(date +%s) + manual_hold ))
+          hold_home_pan=${_LAST_HOME_PAN:--1}; hold_home_tilt=${_LAST_HOME_TILT:--1}; hold_home_zoom=${_LAST_HOME_ZOOM:--1}
+          hold_home_streak=0
           acquisition_state="acquiring"
           acquisition_streak=0
           log "$cam_name" "info" "External control detected during home dwell — holding patrol for ${manual_hold}s"
@@ -1145,6 +1150,7 @@ patrol_camera() {
   local goto_retry_count=0
   local goto_retry_limit=2
   local external_control_until=0
+  local hold_home_pan=-1 hold_home_tilt=-1 hold_home_zoom=-1 hold_home_streak=0
   local schedule_paused=0
   local tracking_enabled=0
   local unknown_hold_seconds=0
@@ -1229,15 +1235,39 @@ patrol_camera() {
     local now; now=$(date +%s)
 
     # --- Check for external control (manual PTZ use) ---
+    local hold_returned=0
     if (( now < external_control_until )); then
-      local remaining=$(( external_control_until - now ))
-      log "$cam_name" "debug" "Manual control hold — ${remaining}s remaining"
-      _patrol_status_tick holding_manual "$now"
-      sleep 5
-      continue
-    elif (( external_control_until > 0 )); then
-      # Hold just expired — reset expected position so we don't immediately
-      # re-trigger drift detection against the stale pre-hold values
+      if (( hold_home_pan >= 0 && hold_home_tilt >= 0 && hold_home_zoom >= 0 )); then
+        local hold_position="" hold_live_pan hold_live_tilt hold_live_zoom
+        hold_position=$(api_get_ptz_position "$cam_id") || hold_position=""
+        IFS=$'\t' read -r hold_live_pan hold_live_tilt hold_live_zoom <<< "$hold_position"
+        if [[ "$hold_live_pan" =~ ^[0-9]+$ && "$hold_live_tilt" =~ ^[0-9]+$ && "$hold_live_zoom" =~ ^[0-9]+$ ]]; then
+          local hold_pan_diff=$(( hold_live_pan - hold_home_pan ))
+          local hold_tilt_diff=$(( hold_live_tilt - hold_home_tilt ))
+          local hold_zoom_diff=$(( hold_live_zoom - hold_home_zoom ))
+          hold_pan_diff=${hold_pan_diff#-}; hold_tilt_diff=${hold_tilt_diff#-}; hold_zoom_diff=${hold_zoom_diff#-}
+          if (( hold_pan_diff <= 200 && hold_tilt_diff <= 200 && hold_zoom_diff <= 30 )); then
+            hold_home_streak=$(( hold_home_streak + 1 ))
+          else
+            hold_home_streak=0
+          fi
+        else
+          hold_home_streak=0
+        fi
+      fi
+      if (( hold_home_streak >= 2 )); then
+        hold_returned=1
+        log "$cam_name" "info" "Camera returned to its HomeView — ending manual hold"
+      else
+        local remaining=$(( external_control_until - now ))
+        log "$cam_name" "debug" "Manual control hold — ${remaining}s remaining"
+        _patrol_status_tick holding_manual "$now"
+        sleep 5
+        continue
+      fi
+    fi
+    if (( external_control_until > 0 )); then
+      # Either hold exit must clear stale targets before drift checks resume.
       expected_pan=-1; expected_tilt=-1; expected_zoom=-1
       acquisition_state="acquiring"
       acquisition_streak=0
@@ -1245,7 +1275,11 @@ patrol_camera() {
       top_drift_attempts=0
       top_drift_streak=0
       top_previous_drift=0
-      log "$cam_name" "info" "Manual control hold expired — resuming patrol"
+      hold_home_pan=-1; hold_home_tilt=-1; hold_home_zoom=-1
+      hold_home_streak=0
+      if (( hold_returned == 0 )); then
+        log "$cam_name" "info" "Manual control hold expired — resuming patrol"
+      fi
     fi
 
     # Single API fetch for top-of-loop tracking check.
@@ -1298,6 +1332,8 @@ patrol_camera() {
       if (( external_controlled == 0 )); then
         if (( top_drift_streak > 0 && _LAST_DRIFT_MAGNITUDE * 4 >= top_previous_drift * 3 )); then
           external_control_until=$(( $(date +%s) + manual_hold ))
+          hold_home_pan=${_LAST_HOME_PAN:--1}; hold_home_tilt=${_LAST_HOME_TILT:--1}; hold_home_zoom=${_LAST_HOME_ZOOM:--1}
+          hold_home_streak=0
           acquisition_state="acquiring"
           acquisition_streak=0
           log "$cam_name" "info" "External control detected — holding patrol for ${manual_hold}s"
@@ -1573,6 +1609,8 @@ patrol_camera() {
         if (( external_controlled == 0 )); then
           if (( dwell_drift_streak > 0 && _LAST_DRIFT_MAGNITUDE * 4 >= dwell_previous_drift * 3 )); then
             external_control_until=$(( $(date +%s) + manual_hold ))
+            hold_home_pan=${_LAST_HOME_PAN:--1}; hold_home_tilt=${_LAST_HOME_TILT:--1}; hold_home_zoom=${_LAST_HOME_ZOOM:--1}
+            hold_home_streak=0
             acquisition_state="acquiring"
             acquisition_streak=0
             log "$cam_name" "info" "External control detected — holding patrol for ${manual_hold}s"

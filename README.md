@@ -163,6 +163,8 @@ Protect can send the camera to its HomeView after auto-tracking. For each drift 
 
 Patrol then skips the manual-control hold and stops position checks until the next goto. If patrol cannot read HomeView, or its data is invalid, the usual drift rules apply. Patrol also skips this hold when you push Home in the Protect app: it counts as camera-initiated movement.
 
+If a manual-control hold starts while the camera is still away from HomeView, patrol keeps the HomeView coordinates from that drift check. During the hold, it reads the position every 5 seconds if those coordinates are known. Two consecutive reads within the same per-axis limits end the hold early. Patrol logs `Camera returned to its HomeView — ending manual hold` and clears the old target before normal checks resume. A failed or invalid position read resets the count and keeps the hold. An unknown HomeView keeps the full hold, with no position reads during it. This rule handles short auto-tracking starts that Protect returns to HomeView after its tracking timeout, even without a confirmed smart detection. A manual joystick move does not cause that return. If you push Home in the Protect app during a hold, the hold also ends after about 10 seconds. Move the camera again to start a new hold.
+
 Set `path_mode` to `"pingpong"` in `defaults` or a camera override to use the two directions. For example, `[0, 1, 2, 3]` becomes `[0, 1, 2, 3, 2, 1]`. The path does not duplicate its endpoints. Two slots keep their initial order. Other values log a warning and use `"loop"`.
 
 With `home_between_cycles`, the camera goes home after it completes the full path, before the next cycle starts.
