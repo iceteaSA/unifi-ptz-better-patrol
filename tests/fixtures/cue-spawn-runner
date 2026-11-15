@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+SCRIPT_DIR=$1
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/patrol.sh"
+_BODY_TEMP=$2
+_NVR_ADDRESS=https://example.invalid
+_STATUS_WEBHOOK_URL=""
+COUNT_PHASE=startup
+export COUNT_PHASE
+polls=0
+SPAWN_NOW=1000
+log() { :; }
+get_camera_config() { printf '%s' "$SPAWN_CONFIG"; }
+api_get_preset_positions() { printf '[]'; }
+api_ensure_auth() { COUNT_PHASE=cycle; }
+_patrol_wait_for_camera_settle() { :; }
+date() { printf '%s\n' "$SPAWN_NOW"; }
+sleep() {
+  polls=$(( polls + 1 ))
+  if (( polls > 12 )); then exit 0; fi
+  SPAWN_NOW=$(( SPAWN_NOW + $1 ))
+  COUNT_PHASE=poll
+}
+patrol_camera cam1 Overwatch '{"presets":[{"slot":0},{"slot":4},{"slot":2}]}'

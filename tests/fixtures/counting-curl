@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+printf '%s curl\n' "$COUNT_PHASE" >> "$COUNT_FILE"
+body_file="" previous="" url=""
+for argument in "$@"; do
+  [[ "$previous" != -o ]] || body_file=$argument
+  [[ "$argument" != https://* ]] || url=$argument
+  previous=$argument
+done
+case "$url" in
+  */events\?*) body='[]' ;;
+  */goto/*) printf 204; exit 0 ;;
+  *) body='{"id":"cam1","name":"Fixed One","state":"CONNECTED"}' ;;
+esac
+printf '%s' "$body" > "$body_file"
+printf 200

@@ -69,7 +69,7 @@ setup() {
   [ "$output" = '[api] info: Status webhook enabled' ]
   run status_payloads
   [ "$status" -eq 0 ]
-  [ "$output" = '[{"camera_id":"cam-1","camera":"Overwatch","state":"patrolling","slot":4,"since":1000,"ts":1000,"version":"1.2.0 (main@test)"},{"camera_id":"cam-1","camera":"Overwatch","state":"holding_manual","slot":4,"since":1005,"ts":1005,"version":"1.2.0 (main@test)"}]' ]
+  [ "$output" = '[{"camera_id":"cam-1","camera":"Overwatch","state":"patrolling","slot":4,"since":1000,"ts":1000,"version":"1.2.0 (main@test)","cue_camera":null},{"camera_id":"cam-1","camera":"Overwatch","state":"holding_manual","slot":4,"since":1005,"ts":1005,"version":"1.2.0 (main@test)","cue_camera":null}]' ]
 }
 
 @test "same state on the next poll sends no post even if the slot changes" {
@@ -77,7 +77,7 @@ setup() {
   [ "$status" -eq 0 ]
   run status_payloads
   [ "$status" -eq 0 ]
-  [ "$output" = '[{"camera_id":"cam-1","camera":"Overwatch","state":"patrolling","slot":4,"since":1000,"ts":1000,"version":"1.2.0 (main@test)"}]' ]
+  [ "$output" = '[{"camera_id":"cam-1","camera":"Overwatch","state":"patrolling","slot":4,"since":1000,"ts":1000,"version":"1.2.0 (main@test)","cue_camera":null}]' ]
 }
 
 @test "heartbeat repeats the current state with its original since and latest slot" {
@@ -122,6 +122,18 @@ setup() {
   [ "$status" -eq 0 ]
   assert_contains "$output" '"camera":"Gate \"East\""'
   assert_contains "$output" '"slot":null'
+}
+
+@test "cue payload contains the escaped source only in cued state" {
+  local status_cue_camera='Fixed "East"'
+  run status_sequence_probe '{"status_webhook_url":"https://example.invalid/webhook"}' cued:1000:4 holding_activity:1005:4 patrolling:1010:2 stopped:1015:
+  [ "$status" -eq 0 ]
+  run status_payloads
+  [ "$status" -eq 0 ]
+  local payloads=$output
+  run jq -c 'map({state, cue_camera})' <<< "$payloads"
+  [ "$status" -eq 0 ]
+  [ "$output" = '[{"state":"cued","cue_camera":"Fixed \"East\""},{"state":"holding_activity","cue_camera":null},{"state":"patrolling","cue_camera":null},{"state":"stopped","cue_camera":null}]' ]
 }
 
 @test "status transport returns before a slow curl finishes" {

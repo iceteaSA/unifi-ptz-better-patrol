@@ -106,6 +106,7 @@ discover.sh   -> api.sh
   `.isAutoTracking // .isPtzAutoTracking // .isTracking`. Keep all three.
 - `/ptz/position` returns `.steps.{pan,tilt,zoom}` in motor steps, the *same* coordinate
   system as preset `.ptz.{pan,tilt,zoom}`. No ISP/zoom scaling conversion is needed.
+- For cue events, use repeated `cameras=` parameters and the `[]` fast path with no `jq` on an empty poll.
 
 ## Behavioral invariants
 

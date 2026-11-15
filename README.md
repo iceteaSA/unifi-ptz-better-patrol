@@ -174,6 +174,38 @@ Apply changes:
 systemctl restart ptz-patrol.service
 ```
 
+### Fixed-Camera Cues
+
+Set `camera_overrides.<ptz id>.cues` to send a PTZ to a preset when a fixed camera detects a smart type:
+
+```json
+"cues": [
+  {"camera_id": "FIXEDCAMERAID", "slot": 0, "types": ["person"], "hold_seconds": 30, "cooldown_seconds": 120}
+]
+```
+
+| Cue key | Default | Requirement |
+|---------|---------|-------------|
+| `camera_id` | Necessary | The fixed camera id, not this PTZ's id. Use 1-64 ASCII letters or digits. |
+| `slot` | Necessary | An integer slot in this PTZ's presets. A slot is permitted if `preset_slots` does not contain it. |
+| `types` | `["person"]` | A non-empty array of non-empty strings. Patrol removes duplicates. |
+| `hold_seconds` | `30` | An integer with a minimum of 5 seconds. |
+| `cooldown_seconds` | `120` | An integer with a minimum of 0 seconds, for each cue entry. |
+
+Patrol checks entries one time at startup. It drops each invalid entry with one warning. It reads each source camera's Protect name one time. If patrol cannot read the name, it uses the id and logs a warning. Discovery shows the names and marks unknown camera ids.
+
+Patrol checks cues at preset and home dwell polls, after activity and manual-control checks. Cue checks stop during activity, tracking, manual holds, schedule pauses, unreadable camera state, and cue dwell. The first applicable entry in config order wins. A cue for the current slot is skipped. Cooldown starts when the cue fires.
+
+The cue uses the usual goto, target acquisition, retry, drift, and HomeView checks. It uses `hold_seconds` for the dwell. The PTZ's own activity can extend that dwell through the usual hold. The maximum is `max_tracking_wait` while the camera is readable. Cues do not extend a cue hold.
+
+The path step that the cue stopped counts as complete. After the cue, patrol uses the next path step. This also applies on a `pingpong` path. If the cue stops the last step of a cycle, patrol skips that cycle's home visit. A cue from a home dwell resumes at the first path step.
+
+Patrol sends the cue goto one time. The usual bounded goto retries can send that command again. Dynamic tracking does not skip the next path step after a cue.
+
+Patrol reads smart-detection events from the last 15 seconds. An event can become available while cue checks are off. It can fire when checks start again, but only in that 15-second window. Protect lists new events about 3 seconds after their start. Patrol ignores the event's `end` field. It uses each event id only one time.
+
+Missing or empty `cues` adds no poll or goto processes and no HTTP requests. An empty event poll starts one curl and no jq. An event request error gives no cue and does not stop patrol.
+
 ### Patrol Schedule
 
 By default, patrol runs 24/7. Add a `schedule` block to restrict patrol to specific time windows. This can be set globally in `defaults` or per-camera in `camera_overrides`.
@@ -295,7 +327,8 @@ The JSON payload has these fields:
   "slot": 4,
   "since": 1794513600,
   "ts": 1794513900,
-  "version": "1.2.0 (main@unknown)"
+  "version": "1.2.0 (main@unknown)",
+  "cue_camera": null
 }
 ```
 
@@ -303,9 +336,21 @@ The JSON payload has these fields:
 
 `slot` is the last commanded slot. The first post after a start can come before the first preset command, so its `slot` is `null`. This value does not mean that the camera has no presets. Home uses slot `-1`. Shutdown uses `null` and sets `since` to the shutdown time.
 
+| Payload field | Value |
+|---------------|-------|
+| `camera_id` | PTZ camera id. |
+| `camera` | PTZ display name. |
+| `state` | One of the states below. |
+| `slot` | Last commanded slot, or `null` if unknown. |
+| `since` | State start time in Unix seconds. |
+| `ts` | Post time in Unix seconds. |
+| `version` | Installed version and ref. |
+| `cue_camera` | Source Protect name in `cued`, or JSON `null` in other states. An unsuccessful name read uses the source id. |
+
 | State | Meaning |
 |-------|---------|
 | `patrolling` | Patrol commands and dwell at a selected slot or home. |
+| `cued` | Dwell at a cue slot. `cue_camera` identifies the fixed camera. Activity during this dwell reports `holding_activity`. |
 | `holding_activity` | Movement or auto-tracking holds patrol. Temporary read errors also hold patrol. |
 | `holding_manual` | Manual PTZ control holds patrol. |
 | `paused_schedule` | The schedule has paused patrol. |

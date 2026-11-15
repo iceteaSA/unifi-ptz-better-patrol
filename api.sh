@@ -107,13 +107,15 @@ api_load_status_webhook() {
 # The URL contains a secret. Use stdin, not the process arguments.
 api_post_status() {
   local cam_id=$1 cam_name=$2 state=$3 slot=$4 since=$5 now=$6 version=$7
+  local cue_camera=${8:-}
   [[ -n "$_STATUS_WEBHOOK_URL" ]] || return 0
   local payload
   payload=$(jq -nc --arg camera_id "$cam_id" --arg camera "$cam_name" \
-    --arg state "$state" --arg slot "$slot" --arg since "$since" --arg ts "$now" --arg version "$version" '
+    --arg state "$state" --arg slot "$slot" --arg since "$since" --arg ts "$now" --arg version "$version" --arg cue_camera "$cue_camera" '
     {camera_id: $camera_id, camera: $camera, state: $state,
      slot: (if $slot == "" then null else ($slot | try tonumber catch null) end),
-     since: ($since | tonumber), ts: ($ts | tonumber), version: $version}
+     since: ($since | tonumber), ts: ($ts | tonumber), version: $version,
+     cue_camera: (if $state == "cued" then $cue_camera else null end)}
   ') || return 0
   curl -q -fsS --max-time 5 -H 'Content-Type: application/json' \
     --data-binary "$payload" -K - >/dev/null 2>&1 <<< "url = \"$_STATUS_WEBHOOK_URL\"" &

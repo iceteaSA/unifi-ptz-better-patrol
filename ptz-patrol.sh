@@ -58,7 +58,7 @@ shutdown() {
     local -a status_pids=()
     for cam_id in "${_CAMERA_IDS[@]}"; do
       (
-        api_post_status "$cam_id" "${_CAMERA_NAMES[$cam_id]}" stopped "" "$status_now" "$status_now" "$_STATUS_VERSION"
+        api_post_status "$cam_id" "${_CAMERA_NAMES[$cam_id]}" stopped "" "$status_now" "$status_now" "$_STATUS_VERSION" ""
         [[ -z "$_LAST_STATUS_PID" ]] || wait "$_LAST_STATUS_PID" 2>/dev/null || true
       ) &
       status_pids+=("$!")
