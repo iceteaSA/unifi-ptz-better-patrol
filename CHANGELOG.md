@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.4.0](https://github.com/iceteaSA/unifi-ptz-better-patrol/compare/v1.3.0...v1.4.0) (2026-11-15)
+
+
+### Features
+
+* cue a PTZ from fixed-camera smart detections ([5f1cc32](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/5f1cc32419cde140ee95a4fd426dc22dfaf5558f))
+* cue a PTZ from fixed-camera smart detections ([d0822aa](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/d0822aa80b2a6b9df18c43f2ac28f749c41f7bda))
+
+
+### Bug Fixes
+
+* expire stale cues and report cue poll failures ([415adcb](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/415adcb8c32c752e2fee3db7a66df4ae0c7d27ca))
+* treat a failed curl transfer as a failed request ([2f9ae64](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/2f9ae6404177852c564360c6ede8a9105eef6754))
+
+
+### Documentation
+
+* state webhook timestamp units and the first null slot ([#21](https://github.com/iceteaSA/unifi-ptz-better-patrol/issues/21)) ([953bb63](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/953bb635460eb293f92128050e09f5cf945f0798))
+
 ## [1.3.0](https://github.com/iceteaSA/unifi-ptz-better-patrol/compare/v1.2.0...v1.3.0) (2026-11-12)
 
 
