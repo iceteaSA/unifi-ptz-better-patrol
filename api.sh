@@ -14,6 +14,7 @@ _TOKEN=""
 _CSRF_TOKEN=""
 _LAST_AUTH=0
 _LAST_HTTP_CODE=0
+_LAST_CURL_RC=0
 _LAST_BODY=""
 _CONSECUTIVE_FAILURES=0
 
@@ -106,13 +107,15 @@ api_load_status_webhook() {
 # The URL contains a secret. Use stdin, not the process arguments.
 api_post_status() {
   local cam_id=$1 cam_name=$2 state=$3 slot=$4 since=$5 now=$6 version=$7
+  local cue_camera=${8:-}
   [[ -n "$_STATUS_WEBHOOK_URL" ]] || return 0
   local payload
   payload=$(jq -nc --arg camera_id "$cam_id" --arg camera "$cam_name" \
-    --arg state "$state" --arg slot "$slot" --arg since "$since" --arg ts "$now" --arg version "$version" '
+    --arg state "$state" --arg slot "$slot" --arg since "$since" --arg ts "$now" --arg version "$version" --arg cue_camera "$cue_camera" '
     {camera_id: $camera_id, camera: $camera, state: $state,
      slot: (if $slot == "" then null else ($slot | try tonumber catch null) end),
-     since: ($since | tonumber), ts: ($ts | tonumber), version: $version}
+     since: ($since | tonumber), ts: ($ts | tonumber), version: $version,
+     cue_camera: (if $state == "cued" then $cue_camera else null end)}
   ') || return 0
   curl -q -fsS --max-time 5 -H 'Content-Type: application/json' \
     --data-binary "$payload" -K - >/dev/null 2>&1 <<< "url = \"$_STATUS_WEBHOOK_URL\"" &
@@ -221,12 +224,20 @@ api_ensure_auth() {
 # mktemp/rm per call, no leak risk if interrupted.
 api_get() {
   # -o writes response body to file; -w prints HTTP code to stdout
+  # curl can leave the previous body intact if no response bytes arrive.
+  : > "$_BODY_TEMP"
+  _LAST_CURL_RC=0
   _LAST_HTTP_CODE=$(curl -k --connect-timeout 3 --max-time 10 -s -b "$_COOKIE_TEMP" \
     --header "TOKEN: $_TOKEN" \
     --header "X-CSRF-Token: $_CSRF_TOKEN" \
     -w '%{http_code}' -o "$_BODY_TEMP" \
-    "$_NVR_ADDRESS/proxy/protect/api$1")
+    "$_NVR_ADDRESS/proxy/protect/api$1") || _LAST_CURL_RC=$?
 
+  if (( _LAST_CURL_RC != 0 )); then
+    _LAST_HTTP_CODE=000
+    _LAST_BODY=""
+    return 0
+  fi
   _LAST_HTTP_CODE="${_LAST_HTTP_CODE:-000}"
   _LAST_BODY=$(<"$_BODY_TEMP")
 }
@@ -277,7 +288,7 @@ api_get_with_retry() {
         api_auth
         ;;
       *)
-        log "api" "debug" "GET $url returned HTTP $_LAST_HTTP_CODE (attempt $attempt/$max_retries)"
+        log "api" "debug" "GET $url returned HTTP $_LAST_HTTP_CODE curl rc=$_LAST_CURL_RC (attempt $attempt/$max_retries)"
         api_ensure_auth
         ;;
     esac

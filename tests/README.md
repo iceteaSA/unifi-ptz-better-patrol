@@ -78,7 +78,13 @@ camera, and a missing, `null` or `true` value patrols it.
 
 `installer_config.bats` tests private config files, temporary update files, bootstrap, and proxy settings.
 
-`startup_spawn.bats` tests that disabled `dynamic_auto_tracking` and webhook settings add no jq processes at startup.
+`startup_spawn.bats` checks the startup jq count with tracking and webhooks disabled. Cue validation adds one jq at startup and none at disabled cue polls.
+
+`curl_failure.bats` checks stale and truncated bodies after curl transfer errors. It checks the unreadable activity cause, not only the active exit code.
+
+`cues.bats` checks cue validation, event polling, UUID deduplication, arbitration, resume order, acquisition, status, and the disabled path.
+
+`fixtures/cue-events.json` contains the complete person and animal event objects from the supplied Protect 7.3.74 sample. The event ids are different UUIDs in the same shape as the sample. Tests change the top-level camera, start, and end fields for each scenario. Nested `labels` and `params` keep the sample values. The event filter reads only the top-level camera and ignores end.
 
 `field_test_helper.bash` supplies virtual time and patrol API stubs for field-feature tests.
 

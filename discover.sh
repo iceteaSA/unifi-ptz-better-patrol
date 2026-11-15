@@ -99,6 +99,20 @@ discover_camera_lines() {
   ' <<< "$1"
 }
 
+# Fixed cameras are missing from the PTZ discovery result. Use the full camera list.
+discover_cue_lines() {
+  jq -r --argjson cameras "$2" '
+    (if .cues == null then [] else .cues end)
+    | if type != "array" then "    cues:                       invalid (expected array)"
+      elif length == 0 then "    cues:                       none"
+      else .[] | if type != "object" then "    cue:                        invalid entry" else
+        . as $cue
+        | ([$cameras[] | select(.id == $cue.camera_id)][0]) as $source
+        | "    cue:                        \($source.name // .camera_id)→\(.slot)\(if $source == null then " [unknown camera id]" else "" end) types=\((if .types == null then ["person"] else .types end) | tojson) hold=\(if .hold_seconds == null then 30 else .hold_seconds end)s cooldown=\(if .cooldown_seconds == null then 120 else .cooldown_seconds end)s"
+      end end
+  ' <<< "$1"
+}
+
 # Resolve per-camera settings: override > defaults
 get_camera_config() {
   local cam_id=$1
@@ -162,6 +176,7 @@ echo ""
 echo "=== Effective config per camera ==="
 webhook_status=off
 [[ -z "$_STATUS_WEBHOOK_URL" ]] || webhook_status=on
+cue_cameras=""
 for (( i = 0; i < count; i++ )); do
   cam_id=$(echo "$cameras" | jq -r ".[$i].id")
   cam_name=$(echo "$cameras" | jq -r ".[$i].name")
@@ -177,6 +192,11 @@ for (( i = 0; i < count; i++ )); do
   [[ "$preset_dwell" != "null" ]] || preset_dwell=none
   echo "    preset_dwell_seconds:       $preset_dwell"
   echo "    path_mode:                  $(echo "$cam_config" | jq -r '.path_mode // "loop"')"
+  cue_config=$(jq -c '.cues // []' <<< "$cam_config")
+  if [[ "$cue_config" != '[]' && -z "$cue_cameras" ]]; then
+    cue_cameras=$(api_get_with_retry /cameras 2 3) || cue_cameras='[]'
+  fi
+  discover_cue_lines "$cam_config" "${cue_cameras:-[]}"
   echo "    auto_tracking_object_types: $(echo "$cam_config" | jq -c 'if .auto_tracking_object_types == null then ["person"] else .auto_tracking_object_types end')"
   echo "    auto_tracking_with_zoom:    $(echo "$cam_config" | jq -r 'if .auto_tracking_with_zoom == null then "camera setting" else .auto_tracking_with_zoom end')"
   echo "    status_webhook_url:         $webhook_status"

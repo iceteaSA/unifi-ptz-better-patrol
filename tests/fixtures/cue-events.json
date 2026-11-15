@@ -1,0 +1,42 @@
+[
+  {
+    "id":"eeeeeeee-eeee-eeee-eeee-eeeeeeeeeee1","modelKey":"event","type":"smartDetectZone",
+    "start":1794721366478,"end":1794721373709,"score":84,"smartDetectTypes":["person"],
+    "camera":"aaaaaaaaaaaaaaaaaaaaaaaa","partition":null,"user":null,
+    "metadata":{
+      "count":null,"weather":{"iconCode":"28","temperature":17.4,"temperatureUnit":"C"},
+      "hallwayMode":"disabled","linesStatus":null,"zonesStatus":{"1":{"level":84,"status":"leave"}},
+      "hallway_mode":"disabled","loiterStatus":null,"tamperStatus":null,
+      "detectedAreas":[{"routePath":{"waypoints":[[466,921],[469,861],[447,831]],"lastDirection":[-20,-72]},"areaIndexes":[64,65,74,75,84,85,94,95,104,105],"smartDetectObject":"oooooooo-oooo-oooo-oooo-oooooooooooo"}],
+      "linesSettings":null,"ramDescription":"",
+      "detectedThumbnails":[{"type":"person","coord":[426,583,65,258],"labels":["smartDetectType:person","zone:aaaaaaaaaaaaaaaaaaaaaaaa:1"],"objectId":"oooooooo-oooo-oooo-oooo-oooooooooooo","croppedId":"MMMMMMMMMMMM-1794721380189","attributes":{"zone":[1],"trackerId":3230,"objectType":"person"},"confidence":95,"clockBestWall":1794721369294}]
+    },
+    "timestamp":1794721370093,"thumbnail":"<dropped>","heatmap":"<dropped>","isFavorite":false,"favoriteObjectIds":null,
+    "description":{
+      "eventMetadata":{"eventType":"smartDetectZone","category":"detection","subCategory":"smartDetectEvent","severity":"medium","title":"Smart Detection","deviceEventClassId":2161},
+      "messageRaw":"{deviceLink} has recorded a person. {viewLink}",
+      "messageKeys":[{"key":"deviceLink","text":"Backdoor 01","style":["link"],"action":"viewDeviceDetails","params":{"deviceId":"aaaaaaaaaaaaaaaaaaaaaaaa"}},{"key":"viewLink","text":"View","style":["link"],"action":"viewCameraTimelapse","params":{"cameraId":"aaaaaaaaaaaaaaaaaaaaaaaa","start":1794721366478}}]
+    },
+    "category":"smart"
+  },
+  {
+    "id":"eeeeeeee-eeee-eeee-eeee-eeeeeeeeeee2","modelKey":"event","type":"smartDetectZone",
+    "start":1794721010309,"end":1794721019896,"score":88,"smartDetectTypes":["animal"],
+    "camera":"aaaaaaaaaaaaaaaaaaaaaaaa","partition":null,"user":null,
+    "metadata":{
+      "count":null,"weather":{"iconCode":"26","temperature":17.4,"temperatureUnit":"C"},
+      "hallwayMode":"disabled","linesStatus":null,"zonesStatus":{"1":{"level":88,"status":"leave"}},
+      "hallway_mode":"disabled","loiterStatus":null,"tamperStatus":null,
+      "detectedAreas":[{"areaIndexes":[74,84],"smartDetectObject":"oooooooo-oooo-oooo-oooo-oooooooooooo"},{"areaIndexes":[74,75,84,85,94,95],"smartDetectObject":"oooooooo-oooo-oooo-oooo-oooooooooooo"}],
+      "linesSettings":null,"ramDescription":"",
+      "detectedThumbnails":[{"type":"animal","coord":[426,712,50,89],"labels":["smartDetectType:animal","zone:aaaaaaaaaaaaaaaaaaaaaaaa:1"],"objectId":"oooooooo-oooo-oooo-oooo-oooooooooooo","croppedId":"MMMMMMMMMMMM-1794721018423","attributes":{"zone":[1],"trackerId":3228,"objectType":"animal"},"confidence":88,"clockBestWall":1794721015620},{"type":"animal","coord":[442,722,109,174],"labels":["smartDetectType:animal","zone:aaaaaaaaaaaaaaaaaaaaaaaa:1"],"objectId":"oooooooo-oooo-oooo-oooo-oooooooooooo","croppedId":"MMMMMMMMMMMM-1794721018419","attributes":{"zone":[1],"trackerId":3229,"objectType":"animal"},"confidence":95,"clockBestWall":1794721012634}]
+    },
+    "timestamp":1794721015102,"thumbnail":"<dropped>","heatmap":"<dropped>","isFavorite":false,"favoriteObjectIds":null,
+    "description":{
+      "eventMetadata":{"eventType":"smartDetectZone","category":"detection","subCategory":"smartDetectEvent","severity":"medium","title":"Smart Detection","deviceEventClassId":2161},
+      "messageRaw":"{deviceLink} has recorded an animal. {viewLink}",
+      "messageKeys":[{"key":"deviceLink","text":"Backdoor 01","style":["link"],"action":"viewDeviceDetails","params":{"deviceId":"aaaaaaaaaaaaaaaaaaaaaaaa"}},{"key":"viewLink","text":"View","style":["link"],"action":"viewCameraTimelapse","params":{"cameraId":"aaaaaaaaaaaaaaaaaaaaaaaa","start":1794721010309}}]
+    },
+    "category":"smart"
+  }
+]
