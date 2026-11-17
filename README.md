@@ -105,8 +105,8 @@ Edit `/data/ptz-patrol/config.json`:
   "defaults": {
     "dwell_seconds": 30,
     "motion_hold_seconds": 15,
-     "max_tracking_wait": 300,
-     "max_smart_wait": 1800,
+    "max_tracking_wait": 300,
+    "max_smart_wait": 1800,
     "manual_control_hold_seconds": 120,
     "ptz_settle_seconds": 10,
     "home_on_shutdown": false,
