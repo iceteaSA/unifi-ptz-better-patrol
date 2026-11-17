@@ -102,6 +102,9 @@ cue_poll_probe() {
     CUE_NOW=1001
     _patrol_poll_cues || true
     printf '__second=%s seen=%s\n' "$cue_pending" "${#cue_seen[@]}"
+    CUE_NOW=1002
+    _patrol_poll_cues || true
+    printf '__third=%s seen=%s\n' "$cue_pending" "${#cue_seen[@]}"
     CUE_NOW=1016; CUE_BODY='[]'
     _patrol_poll_cues || true
     printf '__pruned=%s\n' "${#cue_seen[@]}"
@@ -329,4 +332,34 @@ cue_empty_probe() {
   local -a calls=()
   mapfile -t calls < "$count_file"
   printf '__poll_jq=%s pending=%s\n' "${#calls[@]}" "$cue_pending"
+}
+
+cue_evolving_probe() {
+  local mode=$1 cam_name=Overwatch last_commanded_slot=0
+  local _LAST_TRACKING_ACTIVE=0 _LAST_ACTIVITY_KNOWN=1
+  local -a cue_camera_ids=(fixed1) cue_slots=(4) cue_types=($'\t"person"\t')
+  local -a cue_holds=(30) cue_cooldowns=(0) cue_names=(One) cue_until=(0)
+  local -x cue_query='&cameras=fixed1' cue_pending=-1 cue_match="" cue_matched_at=0 cue_poll_failed=0
+  local -A cue_seen=()
+  CUE_BODY=$(cue_fixture)
+  CUE_BODY=$(jq -c '.[0:1] | .[0].smartDetectTypes=["animal","person"]' <<< "$CUE_BODY")
+  case "$mode" in
+    types) CUE_BODY=$(jq -c '.[0].smartDetectTypes=["animal"]' <<< "$CUE_BODY") ;;
+    cooldown) cue_until=(1005) ;;
+    current) last_commanded_slot=4 ;;
+  esac
+  _patrol_poll_cues || true
+  printf '__evolving_first=%s seen=%s\n' "$cue_pending" "${#cue_seen[@]}"
+  CUE_NOW=1005
+  last_commanded_slot=0
+  CUE_BODY=$(jq -c '.[0].smartDetectTypes=["animal","person"]' <<< "$CUE_BODY")
+  _patrol_poll_cues || true
+  printf '__evolving_second=%s seen=%s\n' "$cue_pending" "${#cue_seen[@]}"
+  CUE_NOW=1006
+  _patrol_poll_cues || true
+  printf '__evolving_third=%s seen=%s\n' "$cue_pending" "${#cue_seen[@]}"
+  CUE_NOW=1016
+  CUE_BODY='[]'
+  _patrol_poll_cues || true
+  printf '__evolving_pruned=%s\n' "${#cue_seen[@]}"
 }

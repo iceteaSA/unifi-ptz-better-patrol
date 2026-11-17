@@ -570,7 +570,7 @@ _patrol_parse_cues() {
 _patrol_poll_cues() {
   local now cutoff id src start types rows i j etype
   local poll_error=0
-  local -a event_cameras=() event_types=() tokens=()
+  local -a event_cameras=() event_types=() event_ids=() event_starts=() tokens=()
   cue_pending=-1
   printf -v now '%(%s)T' -1
   cutoff=$(( (now - 15) * 1000 ))
@@ -613,9 +613,10 @@ _patrol_poll_cues() {
     [[ "$start" =~ ^[0-9]+$ ]] || continue
     (( start >= cutoff && start <= now * 1000 )) || continue
     [[ -z "${cue_seen[$id]+x}" ]] || continue
-    cue_seen["$id"]=$start
     event_cameras+=("$src")
     event_types+=("$types")
+    event_ids+=("$id")
+    event_starts+=("$start")
   done <<< "$rows"
   for (( i=0; i<${#cue_slots[@]}; i++ )); do
     (( now >= cue_until[i] )) || continue
@@ -625,6 +626,7 @@ _patrol_poll_cues() {
       IFS=$'\t' read -r -a tokens <<< "${event_types[$j]}"
       for etype in "${tokens[@]}"; do
         if [[ "${cue_types[$i]}" == *$'\t'"$etype"$'\t'* ]]; then
+          cue_seen["${event_ids[$j]}"]=${event_starts[$j]}
           cue_pending=$i
           cue_match=${etype:1:${#etype}-2}
           cue_matched_at=$now

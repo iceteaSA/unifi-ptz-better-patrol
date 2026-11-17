@@ -226,6 +226,18 @@ setup() {
   run status_max_wait_probe
   [ "$status" -eq 0 ]
   assert_contains "$output" 'Max smart wait (5s) hit while tracking active — advancing anyway'
+  assert_contains "$output" '__cap_goto=0 now=1005'
+  run status_payloads
+  [ "$status" -eq 0 ]
+  assert_contains "$output" '"state":"holding_activity"'
+  assert_not_contains "$output" '"state":"patrolling"'
+}
+
+@test "motion-only cap with ongoing motion does not report a patrolling transition" {
+  run status_max_wait_probe motion
+  [ "$status" -eq 0 ]
+  assert_contains "$output" 'Max wait (5s) hit on motion only — advancing anyway'
+  assert_contains "$output" '__cap_goto=0 now=1005'
   run status_payloads
   [ "$status" -eq 0 ]
   assert_contains "$output" '"state":"holding_activity"'

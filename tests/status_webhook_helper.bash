@@ -119,13 +119,23 @@ status_manual_probe() {
 }
 
 status_max_wait_probe() {
+  local -x cap_activity_state='{"id":"cam-1","state":"CONNECTED","isAutoTracking":true}'
+  if [[ "${1:-tracking}" == motion ]]; then
+    cap_activity_state='{"id":"cam-1","state":"CONNECTED","isMotionDetected":true}'
+  fi
   # shellcheck disable=SC2329 # The patrol library calls these camera stubs.
   api_get_camera_state() {
-    _CACHED_CAM_STATE='{"id":"cam-1","state":"CONNECTED","isAutoTracking":true}'
+    _CACHED_CAM_STATE=$cap_activity_state
   }
   # shellcheck disable=SC2329 # is_tracking calls this stub after each hold poll.
   api_get_with_retry() {
-    _LAST_BODY='{"id":"cam-1","state":"CONNECTED","isAutoTracking":true}'
+    _LAST_BODY=$cap_activity_state
+  }
+  # shellcheck disable=SC2329 # Stop at the cap's goto, before later motor-settle filtering.
+  api_post_with_retry() {
+    printf '__cap_goto=%s now=%s\n' "${1##*/}" "$FIELD_NOW" >&2
+    wait
+    exit 0
   }
   STATUS_END_TIME=1020
   status_patrol_probe '{"max_tracking_wait":5,"max_smart_wait":5,"status_heartbeat_seconds":0}'

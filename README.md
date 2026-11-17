@@ -213,7 +213,7 @@ Patrol sends the cue goto one time. The usual bounded goto retries can send that
 
 Before the cue goto, patrol checks the time since the cue match. After more than 15 seconds, patrol drops the cue. This also applies after a schedule pause, manual hold, activity hold, or unreadable camera state. It logs `Cue dropped — <age>s old` and uses the path step selected by the half-dwell rule. Dynamic tracking does not skip that step.
 
-Patrol reads smart-detection events from the last 15 seconds. An event can become available while cue checks are off. It can fire when checks start again, but only in that 15-second window. Protect lists new events about 3 seconds after their start. Patrol ignores the event's `end` field. It uses each event id only one time.
+Patrol reads smart-detection events from the last 15 seconds. An event can become available while cue checks are off. It can fire when checks start again, but only in that 15-second window. Protect lists new events about 3 seconds after their start. Patrol ignores the event's `end` field. Each event can fire only one cue. Patrol reads its types again at each poll until it fires a cue or leaves the 15-second start window. This also applies when a cue is in cooldown or uses the PTZ's current slot.
 
 Missing or empty `cues` adds no poll or goto processes and no HTTP requests. An empty event poll starts one curl and no jq. An event request error gives no cue and does not stop patrol.
 
