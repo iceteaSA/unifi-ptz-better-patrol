@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.5.0](https://github.com/iceteaSA/unifi-ptz-better-patrol/compare/v1.4.2...v1.5.0) (2026-11-17)
+
+
+### Features
+
+* keep tracking holds open and cap motion-only holds ([57b32c6](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/57b32c6f310bc6c9a027106c54d4f2bb4804e224))
+* keep tracking holds open and re-read cue event types ([f03fbde](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/f03fbde13a6e1209c0bce89d2acee09872d099e3))
+
+
+### Bug Fixes
+
+* re-read cue event types until the event fires a cue ([096f4f6](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/096f4f69f73a7c85e011a830f6e6ed9f3318e0c7))
+
+
+### Documentation
+
+* align the README config example ([3c087bd](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/3c087bddee31cd9b6e3caff28fbe12401273d9bf))
+
 ## [1.4.2](https://github.com/iceteaSA/unifi-ptz-better-patrol/compare/v1.4.1...v1.4.2) (2026-11-15)
 
 
