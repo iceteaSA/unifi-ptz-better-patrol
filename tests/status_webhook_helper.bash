@@ -128,7 +128,7 @@ status_max_wait_probe() {
     _LAST_BODY='{"id":"cam-1","state":"CONNECTED","isAutoTracking":true}'
   }
   STATUS_END_TIME=1020
-  status_patrol_probe '{"max_tracking_wait":5,"status_heartbeat_seconds":0}'
+  status_patrol_probe '{"max_tracking_wait":5,"max_smart_wait":5,"status_heartbeat_seconds":0}'
 }
 
 status_exhausted_retry_probe() {

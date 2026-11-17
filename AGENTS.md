@@ -115,6 +115,7 @@ Break these and the camera ends up in a wrong state that nothing corrects.
 - **Fail-safe direction is "hold".** Any fetch/parse error, or a camera not `CONNECTED`,
   makes `is_tracking` return `active` so the patrol holds instead of advancing. A failed
   position read reports "not externally controlled". Preserve that asymmetry.
+- Limit motion-only hold seconds with `max_tracking_wait`. Set the counter to zero on smart/tracking polls and pause it on unknown polls. Apply `max_smart_wait` to total hold time only while smart/tracking is active. Do not cap unknown activity.
 - **The settle-window motion filter is load-bearing.** The camera's own motor movement trips
   its motion sensor, so `is_tracking` ignores `isMotionDetected`/`lastMotion` inside
   `[last_goto_ts, last_goto_ts + settle_seconds]`. Without it, `motion_hold > dwell` becomes

@@ -222,10 +222,10 @@ setup() {
   assert_not_contains "$output" '"ts":1030'
 }
 
-@test "max wait with ongoing activity does not report a patrolling transition" {
+@test "smart cap with ongoing tracking does not report a patrolling transition" {
   run status_max_wait_probe
   [ "$status" -eq 0 ]
-  assert_contains "$output" 'Max wait (5s) hit'
+  assert_contains "$output" 'Max smart wait (5s) hit while tracking active — advancing anyway'
   run status_payloads
   [ "$status" -eq 0 ]
   assert_contains "$output" '"state":"holding_activity"'
