@@ -570,7 +570,7 @@ _patrol_parse_cues() {
 _patrol_poll_cues() {
   local now cutoff id src start types rows i j etype
   local poll_error=0
-  local -a event_cameras=() event_types=() tokens=()
+  local -a event_cameras=() event_types=() event_ids=() event_starts=() tokens=()
   cue_pending=-1
   printf -v now '%(%s)T' -1
   cutoff=$(( (now - 15) * 1000 ))
@@ -613,9 +613,10 @@ _patrol_poll_cues() {
     [[ "$start" =~ ^[0-9]+$ ]] || continue
     (( start >= cutoff && start <= now * 1000 )) || continue
     [[ -z "${cue_seen[$id]+x}" ]] || continue
-    cue_seen["$id"]=$start
     event_cameras+=("$src")
     event_types+=("$types")
+    event_ids+=("$id")
+    event_starts+=("$start")
   done <<< "$rows"
   for (( i=0; i<${#cue_slots[@]}; i++ )); do
     (( now >= cue_until[i] )) || continue
@@ -625,6 +626,7 @@ _patrol_poll_cues() {
       IFS=$'\t' read -r -a tokens <<< "${event_types[$j]}"
       for etype in "${tokens[@]}"; do
         if [[ "${cue_types[$i]}" == *$'\t'"$etype"$'\t'* ]]; then
+          cue_seen["${event_ids[$j]}"]=${event_starts[$j]}
           cue_pending=$i
           cue_match=${etype:1:${#etype}-2}
           cue_matched_at=$now
@@ -952,10 +954,19 @@ patrol_camera() {
     status_version=$(get_install_version)
   fi
 
-  local dwell motion_hold max_wait manual_hold settle_seconds
+  local dwell motion_hold max_wait max_smart_wait manual_hold settle_seconds
   dwell=$(echo "$cam_config" | jq -r '.dwell_seconds // 30')
   motion_hold=$(echo "$cam_config" | jq -r '.motion_hold_seconds // 15')
-  max_wait=$(echo "$cam_config" | jq -r '.max_tracking_wait // 300')
+  IFS=$'\t' read -r max_wait max_smart_wait <<< "$(jq -r '
+    (if .max_smart_wait == null then 1800 else .max_smart_wait end) as $v
+    | [.max_tracking_wait // 300,
+       (if ($v | type) == "number" and $v >= 0 and ($v | floor) == $v
+        then $v else "invalid" end)] | @tsv
+  ' <<< "$cam_config")"
+  if [[ "$max_smart_wait" == invalid ]]; then
+    log "$cam_name" "warn" "Invalid max_smart_wait — using 1800"
+    max_smart_wait=1800
+  fi
   manual_hold=$(echo "$cam_config" | jq -r '.manual_control_hold_seconds // 120')
   settle_seconds=$(echo "$cam_config" | jq -r '.ptz_settle_seconds // 10')
   local configured_settle_seconds=$settle_seconds
@@ -1135,7 +1146,7 @@ patrol_camera() {
   if [[ "$home_between_cycles" == "true" ]]; then
     home_cycle_info=" home_between_cycles=on"
   fi
-  log "$cam_name" "info" "Patrol: presets=[${presets[*]}] dwell=${dwell}s settle=${settle_seconds}s poll=${poll_interval_s}s hold=${motion_hold}s max_wait=${max_wait}s manual_hold=${manual_hold}s${sched_info}${dyn_info}${home_cycle_info}${preset_dwell_info}${path_info}"
+  log "$cam_name" "info" "Patrol: presets=[${presets[*]}] dwell=${dwell}s settle=${settle_seconds}s poll=${poll_interval_s}s hold=${motion_hold}s max_wait=${max_wait}s max_smart_wait=${max_smart_wait}s manual_hold=${manual_hold}s${sched_info}${dyn_info}${home_cycle_info}${preset_dwell_info}${path_info}"
 
   local idx=0
   # Fresh zero-cooldown events must not keep a path step in a repeat loop.
@@ -1387,6 +1398,8 @@ patrol_camera() {
     # --- Hold while tracking/motion is active ---
     local slot="${presets[$idx]}"
     local waited=0
+    local hold_reason motion_only_seconds=0
+    local tracking_seconds=0 smart_seconds=0 motion_seconds=0 unknown_seconds=0
     # First iteration uses the already-fetched top_state; subsequent iterations
     # fetch fresh state since the camera may have moved during the sleep.
     if (( activity_active )); then
@@ -1394,9 +1407,31 @@ patrol_camera() {
     fi
     while (( activity_active )); do
       top_state=""  # Clear so subsequent iterations fetch fresh state
-      if (( waited == 0 )); then
-        log "$cam_name" "info" "Tracking/motion active — holding"
+      if (( _LAST_ACTIVITY_KNOWN == 0 )); then
+        hold_reason=unknown
+      elif (( _LAST_SMART_ACTIVE == 1 )); then
+        motion_only_seconds=0
+        if (( _LAST_TRACKING_ACTIVE == 1 )); then hold_reason=tracking; else hold_reason=smart; fi
+      else
+        hold_reason=motion
       fi
+      if (( waited == 0 )); then
+        log "$cam_name" "info" "Tracking/motion active — holding ($hold_reason)"
+      elif [[ "$hold_reason" == motion ]] && (( motion_only_seconds >= max_wait )); then
+        log "$cam_name" "warn" "Max wait (${max_wait}s) hit on motion only — advancing anyway"
+        break
+      elif [[ "$hold_reason" == tracking || "$hold_reason" == smart ]] && (( max_smart_wait > 0 && waited >= max_smart_wait )); then
+        log "$cam_name" "warn" "Max smart wait (${max_smart_wait}s) hit while $hold_reason active — advancing anyway"
+        break
+      fi
+      # Charge each sleep to the last known reason, not the next response.
+      # Unknown time pauses motion-only seconds; only smart activity resets them.
+      case "$hold_reason" in
+        tracking) tracking_seconds=$(( tracking_seconds + 5 )) ;;
+        smart) smart_seconds=$(( smart_seconds + 5 )) ;;
+        motion) motion_seconds=$(( motion_seconds + 5 )); motion_only_seconds=$(( motion_only_seconds + 5 )) ;;
+        unknown) unknown_seconds=$(( unknown_seconds + 5 )) ;;
+      esac
       sleep 5
       waited=$((waited + 5))
       api_ensure_auth
@@ -1417,11 +1452,12 @@ patrol_camera() {
         unknown_hold_seconds=0
       fi
       _patrol_status_activity "$activity_active" "$_LAST_ACTIVITY_KNOWN"
-      if (( activity_active && _LAST_ACTIVITY_KNOWN == 1 && waited >= max_wait )); then
-        log "$cam_name" "warn" "Max wait (${max_wait}s) hit — advancing anyway"
-        break
-      fi
     done
+    if (( waited > 0 )); then
+      local unknown_info=""
+      (( unknown_seconds == 0 )) || unknown_info=", unknown ${unknown_seconds}s"
+      log "$cam_name" "info" "Activity hold ended after ${waited}s (tracking ${tracking_seconds}s, smart ${smart_seconds}s, motion ${motion_seconds}s${unknown_info})"
+    fi
     if (( activity_active == 0 )); then
       _patrol_status_tick patrolling
     fi
@@ -1466,9 +1502,6 @@ patrol_camera() {
       cue_pending=-1
     else
       cue_resume=0
-    fi
-    if (( waited > 0 && waited < max_wait )); then
-      log "$cam_name" "debug" "Clear after ${waited}s — resuming"
     fi
 
     # --- Move to next preset ---

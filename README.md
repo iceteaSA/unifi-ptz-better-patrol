@@ -106,6 +106,7 @@ Edit `/data/ptz-patrol/config.json`:
     "dwell_seconds": 30,
     "motion_hold_seconds": 15,
     "max_tracking_wait": 300,
+    "max_smart_wait": 1800,
     "manual_control_hold_seconds": 120,
     "ptz_settle_seconds": 10,
     "home_on_shutdown": false,
@@ -118,6 +119,7 @@ Edit `/data/ptz-patrol/config.json`:
       "dwell_seconds": 45,
       "motion_hold_seconds": 20,
       "max_tracking_wait": 180,
+      "max_smart_wait": 1800,
       "manual_control_hold_seconds": 60,
       "preset_slots": [0, 1, 3]
     }
@@ -139,7 +141,8 @@ Edit `/data/ptz-patrol/config.json`:
 | `defaults.preset_dwell_seconds` | `{}` | Dwell seconds for each slot. Other slots use `dwell_seconds`. |
 | `defaults.path_mode` | `"loop"` | `"loop"` uses the preset list again. `"pingpong"` uses the inner slots in the opposite order before the next cycle. |
 | `defaults.motion_hold_seconds` | `15` | Hold time after motion/smart detection |
-| `defaults.max_tracking_wait` | `300` | Max seconds to wait during active tracking |
+| `defaults.max_tracking_wait` | `300` | Motion-only hold seconds before patrol advances. Smart detection or tracking sets this counter to zero. Unreadable polls pause it. |
+| `defaults.max_smart_wait` | `1800` | Total activity-hold seconds before patrol advances while smart detection or tracking is active. Use an integer ≥ 0. `0` disables this cap. Invalid values give a warning and use `1800`. |
 | `defaults.manual_control_hold_seconds` | `120` | Backoff time after manual PTZ control detected |
 | `defaults.ptz_settle_seconds` | `10` | Grace period after a goto before checking for drift (auto-clamped to `dwell_seconds/2` at startup) |
 | `defaults.home_on_shutdown` | `false` | Send cameras to home position on service stop |
@@ -150,6 +153,8 @@ Edit `/data/ptz-patrol/config.json`:
 | `defaults.status_heartbeat_seconds` | `300` | Seconds between status reports. Use an integer with a minimum of `30`, or `0` for state changes only. |
 
 ### Per-Camera Overrides
+
+Activity holds check the camera at 5-second intervals. Smart detection and tracking do not use the motion-only cap. `max_smart_wait` prevents a smart flag that stays on from stopping patrol without an end. Each hold-end log gives the total time and seconds for tracking, smart detection, and motion. The log includes unknown seconds only when non-zero. Each interval counts for the reason from the poll before it.
 
 Add entries under `camera_overrides` keyed by camera ID. Any field from `defaults` can be overridden. Set `"enabled": false` to skip a camera. Use `"preset_slots": [0, 1, 3]` to patrol specific presets instead of all discovered ones.
 
@@ -198,7 +203,7 @@ Patrol checks entries one time at startup. It drops each invalid entry with one 
 
 Patrol checks cues at preset and home dwell polls, after activity and manual-control checks. Cue checks stop during activity, tracking, manual holds, schedule pauses, unreadable camera state, and cue dwell. The first applicable entry in config order wins. A cue for the current slot is skipped. Cooldown starts when the cue fires.
 
-The cue uses the usual goto, target acquisition, retry, drift, and HomeView checks. It uses `hold_seconds` for the dwell. The PTZ's own activity can extend that dwell through the usual hold. The maximum is `max_tracking_wait` while the camera is readable. Cues do not extend a cue hold.
+The cue uses the usual goto, target acquisition, retry, drift, and HomeView checks. It uses `hold_seconds` for the dwell. The PTZ's own activity can extend that dwell through the usual hold. Motion-only time uses `max_tracking_wait`; smart detection or tracking uses `max_smart_wait`. Unknown activity stays on hold without a cap. Cues do not extend a cue hold.
 
 If a cue stops a path step before half of that slot's dwell time, patrol repeats the step after the cue. Cues can cause only one repeat per path step. A second early cue counts that step as complete. The limit also applies with `cooldown_seconds: 0`. When the path advances, the next step can repeat one time. At half of the dwell time or more, patrol uses the next path step. This also applies on a `pingpong` path. If that advance ends a cycle, patrol skips that cycle's home visit. A cue from a home dwell resumes at the first path step, or the second if the cue held the first step's slot.
 
@@ -208,7 +213,7 @@ Patrol sends the cue goto one time. The usual bounded goto retries can send that
 
 Before the cue goto, patrol checks the time since the cue match. After more than 15 seconds, patrol drops the cue. This also applies after a schedule pause, manual hold, activity hold, or unreadable camera state. It logs `Cue dropped — <age>s old` and uses the path step selected by the half-dwell rule. Dynamic tracking does not skip that step.
 
-Patrol reads smart-detection events from the last 15 seconds. An event can become available while cue checks are off. It can fire when checks start again, but only in that 15-second window. Protect lists new events about 3 seconds after their start. Patrol ignores the event's `end` field. It uses each event id only one time.
+Patrol reads smart-detection events from the last 15 seconds. An event can become available while cue checks are off. It can fire when checks start again, but only in that 15-second window. Protect lists new events about 3 seconds after their start. Patrol ignores the event's `end` field. Each event can fire only one cue. Patrol reads its types again at each poll until it fires a cue or leaves the 15-second start window. This also applies when a cue is in cooldown or uses the PTZ's current slot.
 
 Missing or empty `cues` adds no poll or goto processes and no HTTP requests. An empty event poll starts one curl and no jq. An event request error gives no cue and does not stop patrol.
 
@@ -248,7 +253,7 @@ The optional minute constraint uses the device clock, like the schedule. Patrol 
 
 The windows intersect at schedule edges. For example, schedule `22:00`-`06:00` with `45` to `15` is active at 22:00-22:14 and 22:45-23:14. It continues each hour through 05:45-05:59.
 
-If a hold is active when a window ends, it finishes first. While the camera state is readable, the hold can continue for up to `max_tracking_wait`. The next schedule check then pauses patrol. An invalid, incomplete, or equal minute pair logs a warning. Patrol runs without the constraint.
+If a hold is active when a window ends, it finishes first. Motion-only time uses `max_tracking_wait`. Smart detection or tracking uses the total hold-time cap `max_smart_wait`; `0` permits an unlimited smart hold. Unknown activity stays on hold without a cap. The next schedule check then pauses patrol. An invalid, incomplete, or equal minute pair logs a warning. Patrol runs without the constraint.
 
 The schedule-pause actions also apply at each constrained-window end. If `home_on_pause` is `true`, the camera goes home at each end, including hourly ends inside the schedule. If `dynamic_auto_tracking` is `true`, auto-tracking turns off at each window end and on again when the next window starts.
 
@@ -437,8 +442,8 @@ The tag uses the camera name from Protect. Cameras with the same name add the la
 [2026-03-10 12:00:10] [WARN] [api] Auth attempt 1/5 failed — retrying in 10s
 [2026-03-10 12:00:20] [INFO] [api] Authenticated
 [2026-03-10 12:00:20] [DEBUG] [api] GET /cameras returned HTTP 200 (attempt 1/3)
-[2026-03-10 12:00:20] [INFO] [Driveway #abc123] Patrol: presets=[0 4 2] dwell=30s settle=10s poll=5s hold=15s max_wait=300s manual_hold=120s preset_dwell=4:45,2:15
-[2026-03-10 12:00:20] [INFO] [Garden] Patrol: presets=[0 1 2 3 2 1] dwell=30s settle=10s poll=5s hold=15s max_wait=300s manual_hold=120s path=pingpong
+[2026-03-10 12:00:20] [INFO] [Driveway #abc123] Patrol: presets=[0 4 2] dwell=30s settle=10s poll=5s hold=15s max_wait=300s max_smart_wait=1800s manual_hold=120s preset_dwell=4:45,2:15
+[2026-03-10 12:00:20] [INFO] [Garden] Patrol: presets=[0 1 2 3 2 1] dwell=30s settle=10s poll=5s hold=15s max_wait=300s max_smart_wait=1800s manual_hold=120s path=pingpong
 [2026-03-10 12:00:25] [INFO] [Driveway #abc123] Camera renamed in Protect: 'Driveway' → 'Gate'
 [2026-03-10 12:00:30] [INFO] [Gate #abc123] → Slot 4 [HTTP 200]
 [2026-03-10 12:00:45] [INFO] [Gate #abc123] PTZ drift detected: pan(11127→10880) tilt(10412→11430) zoom(710→0)
@@ -470,7 +475,7 @@ The tag uses the camera name from Protect. Cameras with the same name add the la
      └─────┬──────┘
            │ no
      ┌─────▼──────┐
-     │  Tracking  │──yes──> Hold (check every 5s, up to max_wait)
+      │  Tracking  │──yes──> Hold (check every 5s; smart/motion caps)
      │  active?   │         (advance to next preset when clear)
      └─────┬──────┘
            │ no
@@ -554,7 +559,7 @@ Key operational signals:
 [2026-03-10 12:00:01] [INFO] [main] Found 3 PTZ camera(s) — launching patrol loops
 
 # Normal patrol
-[2026-03-10 12:00:02] [INFO] [Front Door] Patrol: presets=[0 1 2 3] dwell=30s hold=15s max_wait=300s manual_hold=120s
+[2026-03-10 12:00:02] [INFO] [Front Door] Patrol: presets=[0 1 2 3] dwell=30s settle=10s poll=5s hold=15s max_wait=300s max_smart_wait=1800s manual_hold=120s
 [2026-03-10 12:00:32] [INFO] [Front Door] → Slot 1 [HTTP 200]
 
 # PTZ manual control detection (any axis — pan, tilt, or zoom)
@@ -564,7 +569,7 @@ Key operational signals:
 
 # Motion during dwell
 [2026-03-10 12:05:02] [INFO] [Gate PTZ] Activity during dwell — holding
-[2026-03-10 12:05:02] [INFO] [Gate PTZ] Tracking/motion active — holding
+[2026-03-10 12:05:02] [INFO] [Gate PTZ] Tracking/motion active — holding (motion)
 
 # Camera with no presets configured
 [2026-03-10 12:00:03] [WARN] [Back Yard] Only 0 preset(s) — need 2+. Skipping.
@@ -579,9 +584,9 @@ Key operational signals:
 [2026-03-10 12:00:02] [INFO] [Driveway] Auto-tracking enabled (["person"])
 [2026-03-10 12:00:02] [INFO] [Driveway] → Slot 0 [HTTP 200]
 [2026-03-10 12:10:05] [INFO] [Driveway] Activity during dwell — holding
-[2026-03-10 12:10:05] [INFO] [Driveway] Tracking/motion active — holding
-[2026-03-10 12:11:05] [DEBUG] [Driveway] Clear after 65s — resuming
-[2026-03-10 12:11:05] [INFO] [Driveway] → Slot 4 [HTTP 200]
+[2026-03-10 12:10:05] [INFO] [Driveway] Tracking/motion active — holding (tracking)
+[2026-03-10 12:11:10] [INFO] [Driveway] Activity hold ended after 65s (tracking 65s, smart 0s, motion 0s)
+[2026-03-10 12:11:10] [INFO] [Driveway] → Slot 4 [HTTP 200]
 
 # Auto-setup on startup
 [2026-03-10 12:00:01] [INFO] [main] Front Door: disabled auto-tracking for dynamic mode (was ["person"])

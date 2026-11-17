@@ -203,6 +203,7 @@ for (( i = 0; i < count; i++ )); do
   echo "    status_heartbeat_seconds:   $(echo "$cam_config" | jq -r 'if .status_heartbeat_seconds == null then 300 else .status_heartbeat_seconds end')"
   echo "    motion_hold:                $(echo "$cam_config" | jq -r '.motion_hold_seconds // 15')s"
   echo "    max_tracking_wait:          $(echo "$cam_config" | jq -r '.max_tracking_wait // 300')s"
+  echo "    max_smart_wait:             $(jq -r '(if .max_smart_wait == null then 1800 else .max_smart_wait end) as $v | if ($v | type) == "number" and $v >= 0 and ($v | floor) == $v then $v else 1800 end' <<< "$cam_config")s"
   echo "    manual_control_hold:        $(echo "$cam_config" | jq -r '.manual_control_hold_seconds // 120')s"
   echo "    ptz_settle:                 $(echo "$cam_config" | jq -r '.ptz_settle_seconds // 10')s"
   override_slots=$(echo "$cam_config" | jq -r '.preset_slots // empty')

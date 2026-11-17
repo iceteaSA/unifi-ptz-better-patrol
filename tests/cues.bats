@@ -86,8 +86,9 @@ load cue_test_helper
 @test "UUID event ids fire only once and expire from the seen map" {
   run cue_poll_probe duplicate
   [ "$status" -eq 0 ]
-  assert_contains "$output" '__first=0 rc=0 until=1000 seen=2'
-  assert_contains "$output" '__second=-1 seen=2'
+  assert_contains "$output" '__first=0 rc=0 until=1000 seen=1'
+  assert_contains "$output" '__second=1 seen=2'
+  assert_contains "$output" '__third=-1 seen=2'
   assert_contains "$output" '__pruned=0'
 }
 
