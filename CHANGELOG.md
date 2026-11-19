@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.6.1](https://github.com/iceteaSA/unifi-ptz-better-patrol/compare/v1.6.0...v1.6.1) (2026-11-19)
+
+
+### Bug Fixes
+
+* diagnose login failures and close remaining secret paths ([8214be0](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/8214be023689c8f72f6ec7e33008fe13d5dc6b13))
+* keep logs, large JSON and session secrets working safely ([9a0889f](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/9a0889f550383cb99495bac7cf12cef4bdec5f91))
+* keep the session token and password off command lines ([71c9a53](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/71c9a535e412e05a43daf6af009130238f766d36))
+* pass large JSON to jq through stdin or files ([9b8e12d](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/9b8e12d28ac7687419f170ce01e95423ae34ac91))
+* stop journald dropping daemon logs after 10,000 lines a day ([e5e3f3a](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/e5e3f3a0e73c9df1829fe4bcb53af6da8818ef17))
+
+
+### Documentation
+
+* update the config merge guidance for file inputs ([8becf56](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/8becf569e138cf46d0995cdadc421a4174667a5f))
+
 ## [1.6.0](https://github.com/iceteaSA/unifi-ptz-better-patrol/compare/v1.5.0...v1.6.0) (2026-11-19)
 
 
