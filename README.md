@@ -156,6 +156,8 @@ Edit `/data/ptz-patrol/config.json`:
 
 Activity holds check the camera at 5-second intervals. Smart detection and tracking do not use the motion-only cap. `max_smart_wait` prevents a smart flag that stays on from stopping patrol without an end. Each hold-end log gives the total time and seconds for tracking, smart detection, and motion. The log includes unknown seconds only when non-zero. Each interval counts for the reason from the poll before it.
 
+When tracking ends, patrol immediately logs its pan, tilt and zoom, or `Tracking ended (position unreadable)` if it cannot read the position.
+
 Add entries under `camera_overrides` keyed by camera ID. Any field from `defaults` can be overridden. Set `"enabled": false` to skip a camera. Use `"preset_slots": [0, 1, 3]` to patrol specific presets instead of all discovered ones.
 
 Set `preset_dwell_seconds` in `defaults` or a camera override. Each key is a preset slot string. Each value must be a positive integer, or a string of digits for that integer. Patrol logs a warning and ignores invalid entries and slots not in the patrol list.

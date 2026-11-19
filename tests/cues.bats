@@ -233,7 +233,7 @@ load cue_test_helper
 @test "cue goto uses acquisition retries rather than a manual drift hold" {
   run cue_integration_probe '{"dwell_seconds":6,"ptz_settle_seconds":0,"cues":[{"camera_id":"fixed1","slot":2,"hold_seconds":12}]}' integration-acquisition 5
   [ "$status" -eq 0 ]
-  assert_contains "$output" 'Goto target not acquired — live position remains off target'
+  assert_contains "$output" 'Goto target not acquired — live pan=8800 tilt=10400 zoom=97, target pan=11600 tilt=10400 zoom=97'
   assert_contains "$output" 'Re-issued goto for slot 2 after failed execution (attempt 1/2'
   assert_contains "$output" 'Goto slot 2 still has not taken effect after 2 retries — advancing patrol'
   assert_contains "$output" '__goto=0 now=1014 idx=0'

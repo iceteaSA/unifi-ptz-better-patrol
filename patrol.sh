@@ -115,7 +115,7 @@ is_externally_controlled() {
     else
       acquisition_streak=0
       _LAST_GOTO_FAILED=1
-      log "$cam_name" "warn" "Goto target not acquired — live position remains off target"
+      log "$cam_name" "warn" "Goto target not acquired — live pan=$live_pan tilt=$live_tilt zoom=$live_zoom, target pan=$expected_pan tilt=$expected_tilt zoom=$expected_zoom"
     fi
     _LAST_ACQUISITION_STATE=$acquisition_state
     _LAST_ACQUISITION_STREAK=$acquisition_streak
@@ -1491,6 +1491,16 @@ patrol_camera() {
         activity_active=1
       else
         activity_active=0
+      fi
+      if [[ "$hold_reason" == tracking ]] && (( _LAST_ACTIVITY_KNOWN == 0 || _LAST_SMART_ACTIVE == 0 || _LAST_TRACKING_ACTIVE == 0 )); then
+        local end_position end_pan end_tilt end_zoom
+        end_position=$(api_get_ptz_position "$cam_id") || end_position=""
+        IFS=$'\t' read -r end_pan end_tilt end_zoom <<< "$end_position"
+        if [[ "$end_pan" =~ ^[0-9]+$ && "$end_tilt" =~ ^[0-9]+$ && "$end_zoom" =~ ^[0-9]+$ ]]; then
+          log "$cam_name" "info" "Tracking ended at pan $end_pan tilt $end_tilt zoom $end_zoom"
+        else
+          log "$cam_name" "info" "Tracking ended (position unreadable)"
+        fi
       fi
       _patrol_refresh_camera_name
       if (( _LAST_ACTIVITY_KNOWN == 0 )); then
