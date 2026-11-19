@@ -13,3 +13,11 @@ load test_helper
   [ "$interval" = 30s ]
   [ "$burst" = 2000 ]
 }
+
+@test "service disables core dumps containing in-memory credentials" {
+  local line core=""
+  while IFS= read -r line; do
+    [[ "$line" != LimitCORE=* ]] || core=${line#*=}
+  done < "$BATS_TEST_DIRNAME/../ptz-patrol.service"
+  [ "$core" = 0 ]
+}

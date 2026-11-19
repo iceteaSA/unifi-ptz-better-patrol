@@ -35,6 +35,13 @@ load installer_config_helper
   [ "$output" = '__final_mode=600' ]
 }
 
+@test "installer config updates keep all supplied values out of jq argv and preserve JSON" {
+  run installer_secure_probe
+  [ "$status" -eq 0 ]
+  assert_contains "$output" '__installer-argv-clean-and-roundtrip'
+  assert_not_contains "$output" '__installer-value-in-argv'
+}
+
 @test "service removes proxy environment variables for NVR and webhook requests" {
   run unit_proxy_environment_probe
   [ "$status" -eq 0 ]

@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$1/api.sh"
+CONFIG_FILE="$AUTH_AUDIT_DIR/strict-config.json"
+printf '{}' > "$CONFIG_FILE"
+api_load_config() { :; }
+_NVR_ADDRESS=https://example.invalid
+printf -v _USERNAME '%s' sample-user
+printf -v _PASSWORD '%s' sample-value
+api_init
+api_auth

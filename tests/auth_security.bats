@@ -49,3 +49,45 @@ setup() { auth_prepare; }
   [ "$status" -eq 0 ]
   [[ "$output" == *'__cleaned'* ]]
 }
+
+@test "login transfer failure identifies the curl exit code without reply content" {
+  run auth_probe transfer
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'Auth failed — login request error (curl rc 28)'* ]]
+  [[ "$output" != *'no device token'* && "$output" != *'no CSRF token'* ]]
+}
+
+@test "login without device token identifies HTTP status without exposing reply or cookie" {
+  run auth_probe failure
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'Auth failed — no device token in login reply (HTTP 401)'* ]]
+  [[ "$output" != *'sample-reply-private'* && "$output" != *'sample-cookie-private'* ]]
+  [[ "$output" != *'no CSRF token'* ]]
+}
+
+@test "empty login reports the missing device token even without a known HTTP code" {
+  run auth_probe empty
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'Auth failed — no device token in login reply'* ]]
+  [[ "$output" != *'(HTTP '* ]]
+}
+
+@test "malformed login reports missing token without leaking parser input" {
+  run auth_probe malformed
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'Auth failed — no device token in login reply (HTTP 200)'* ]]
+  [[ "$output" != *'sample-reply-private'* && "$output" != *'sample-cookie-private'* && "$output" != *'parse error'* ]]
+}
+
+@test "login without CSRF identifies the missing header only" {
+  run auth_probe no-csrf
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'Auth failed — no CSRF token in login reply'* ]]
+  [[ "$output" != *'no device token'* ]]
+}
+
+@test "missing CSRF logs its reason under executable strict shell options" {
+  run auth_strict_probe
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'Auth failed — no CSRF token in login reply'* ]]
+}

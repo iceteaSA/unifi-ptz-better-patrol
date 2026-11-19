@@ -33,6 +33,10 @@ auth_init() {
   umask "$before"
 }
 
+auth_strict_probe() {
+  AUTH_MODE=no-csrf bash "$BATS_TEST_DIRNAME/fixtures/auth-strict" "$BATS_TEST_DIRNAME/.."
+}
+
 auth_probe() {
   local mode=$1 path file argument request_files=0 header_refs=0
   local -a arguments=()
@@ -88,7 +92,7 @@ auth_probe() {
       [[ "$(< "$path")" == $'TOKEN: sample-session-two\nX-CSRF-Token: sample-csrf-two' ]] || return 1
       printf '__rewritten\n'
       ;;
-    failure|empty|transfer|no-csrf)
+    failure|empty|transfer|no-csrf|malformed)
       AUTH_MODE=$mode
       local rc=0
       api_auth || rc=$?

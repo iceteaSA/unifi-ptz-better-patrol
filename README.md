@@ -636,6 +636,8 @@ With a 1-day window, journald reports the suppression only when the next window 
 
 A service restart does not restore logging inside the rate-limit window. The broken-socket case below has the same symptom.
 
+`systemctl restart systemd-journald` clears journald's rate-limit state in the window, but upgrading is the fix.
+
 ### The service looks dead but is still running
 
 Rule out the rate limit above first. The stdout-socket test below distinguishes a broken socket from rate limiting.

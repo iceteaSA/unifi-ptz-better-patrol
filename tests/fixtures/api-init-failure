@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+source "$1/api.sh"
+CONFIG_FILE="$2/config-test.json"
+printf '{}' > "$CONFIG_FILE"
+INIT_ROOT=$2
+FAIL_AT=$3
+printf '0\n' > "$INIT_ROOT/count"
+if [[ "${4:-}" == inherited ]]; then
+  _COOKIE_TEMP="$INIT_ROOT/parent-cookie"
+  _HEADERS_TEMP="$INIT_ROOT/parent-headers"
+  _AUTH_HEADERS_TEMP="$INIT_ROOT/parent-auth"
+  _BODY_TEMP="$INIT_ROOT/parent-body"
+  printf 'parent\n' > "$_COOKIE_TEMP"
+  printf 'parent\n' > "$_HEADERS_TEMP"
+  printf 'parent\n' > "$_AUTH_HEADERS_TEMP"
+  printf 'parent\n' > "$_BODY_TEMP"
+fi
+api_load_config() { :; }
+mktemp() {
+  local count
+  IFS= read -r count < "$INIT_ROOT/count"
+  count=$(( count + 1 ))
+  printf '%s\n' "$count" > "$INIT_ROOT/count"
+  (( count != FAIL_AT )) || return 1
+  command mktemp "$INIT_ROOT/${1##*/}"
+}
+api_init
+exit "$?"
