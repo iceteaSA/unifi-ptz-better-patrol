@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.6.2](https://github.com/iceteaSA/unifi-ptz-better-patrol/compare/v1.6.1...v1.6.2) (2026-11-19)
+
+
+### Documentation
+
+* list the AI PTZ Industrial as a tested camera ([67068b1](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/67068b179bdb91e42f5ae779440f6a1fd13665b3))
+* list the AI PTZ Industrial as a tested camera ([0ae96fe](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/0ae96fe7c4191fe2054f8dec8df690541f1ee910))
+
 ## [1.6.1](https://github.com/iceteaSA/unifi-ptz-better-patrol/compare/v1.6.0...v1.6.1) (2026-11-19)
 
 
