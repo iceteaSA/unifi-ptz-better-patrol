@@ -102,6 +102,9 @@ discover_camera_lines() {
 # Fixed cameras are missing from the PTZ discovery result. Use the full camera list.
 discover_cue_lines() {
   jq -r --argjson cameras "$2" '
+    def zone($source; $requested):
+      ([$source.smartDetectZones[]? | select(($requested | type) == "string" and .name == $requested)][0]
+        // [$source.smartDetectZones[]? | select((.id | tostring) == ($requested | tostring))][0]);
     (if .cues == null then [] else .cues end)
     | if type != "array" then "    cues:                       invalid (expected array)"
       elif length == 0 then "    cues:                       none"
@@ -109,6 +112,10 @@ discover_cue_lines() {
         . as $cue
         | ([$cameras[] | select(.id == $cue.camera_id)][0]) as $source
         | "    cue:                        \($source.name // .camera_id)→\(.slot)\(if $source == null then " [unknown camera id]" else "" end) types=\((if .types == null then ["person"] else .types end) | tojson) hold=\(if .hold_seconds == null then 30 else .hold_seconds end)s cooldown=\(if .cooldown_seconds == null then 120 else .cooldown_seconds end)s"
+          + (if has("zones") then " zones=" + (if (.zones | type) != "array" then "invalid" else
+              [.zones[] | . as $requested | zone($source; $requested) as $zone
+                | if $zone == null then "\($requested) [unknown zone]" else ($zone.name // ($zone.id | tostring)) end]
+              | join(", ") end) else "" end)
       end end
   ' <<< "$1"
 }

@@ -196,10 +196,13 @@ Set `camera_overrides.<ptz id>.cues` to send a PTZ to a preset when a fixed came
 | `camera_id` | Necessary | The fixed camera id, not this PTZ's id. Use 1-64 ASCII letters or digits. |
 | `slot` | Necessary | An integer slot in this PTZ's presets. A slot is permitted if `preset_slots` does not contain it. |
 | `types` | `["person"]` | A non-empty array of non-empty strings. Patrol removes duplicates. |
+| `zones` | No filter | A non-empty array of zone names, non-negative integer ids, or strings of digits. |
 | `hold_seconds` | `30` | An integer with a minimum of 5 seconds. |
 | `cooldown_seconds` | `120` | An integer with a minimum of 0 seconds, for each cue entry. |
 
 Patrol checks entries one time at startup. It drops each invalid entry with one warning. It reads each source camera's Protect name one time. If patrol cannot read the name, it uses the id and logs a warning. Discovery shows the names and marks unknown camera ids.
+
+With `zones`, an event must contain at least one of the cue's zones and one of its types. Patrol resolves zones at startup from the source camera's `smartDetectZones`. An exact name match comes first, then an id match. If a zone does not resolve, patrol logs `Cue zone "<zone>" not found on <source> — ignoring this cue entry` and drops only that entry. Zone ids stay usable if the startup camera read fails. Zone names do not. If the read succeeds, the id must exist on that camera. Discovery shows zone names and marks unknown zones. Events outside the filter stay eligible: patrol checks their zones again until they fire a cue or leave the 15-second window.
 
 Patrol checks cues at preset and home dwell polls, after activity and manual-control checks. Cue checks stop during activity, tracking, manual holds, schedule pauses, unreadable camera state, and cue dwell. The first applicable entry in config order wins. A cue for the current slot is skipped. Cooldown starts when the cue fires.
 

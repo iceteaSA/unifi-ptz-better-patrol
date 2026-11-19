@@ -1,0 +1,8 @@
+{
+  "id": "fixed1",
+  "name": "Fixed One",
+  "smartDetectZones": [
+    {"id": 1, "name": "Default"},
+    {"id": 2, "name": "Trail mouth"}
+  ]
+}
