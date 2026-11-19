@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.6.0](https://github.com/iceteaSA/unifi-ptz-better-patrol/compare/v1.5.0...v1.6.0) (2026-11-19)
+
+
+### Features
+
+* filter cues by smart detection zone ([ff0dc76](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/ff0dc7601903b4e05161ac6a64480f0bc368b3dd))
+* filter cues by zone and log tracking-end positions ([7045a60](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/7045a60031cf7ea6381f6689d68aba6885acba1a))
+* log the position where tracking ends ([6c0f578](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/6c0f57828fe98ef40cf1ff1d5e41388268eb7306))
+
 ## [1.5.0](https://github.com/iceteaSA/unifi-ptz-better-patrol/compare/v1.4.2...v1.5.0) (2026-11-17)
 
 
