@@ -9,6 +9,7 @@ CONFIG_FILE="${CONFIG_FILE:-$SCRIPT_DIR/config.json}"
 # --- Private globals (per-process after fork) ---
 _COOKIE_TEMP=""
 _HEADERS_TEMP=""
+_AUTH_HEADERS_TEMP=""
 _BODY_TEMP=""
 _TOKEN=""
 _CSRF_TOKEN=""
@@ -37,15 +38,18 @@ api_init() {
     log "api" "error" "FATAL: Config file not found: $CONFIG_FILE"
     return 1
   fi
-  _COOKIE_TEMP=$(mktemp /tmp/ptz-patrol-cookie-XXXXXX)
-  _HEADERS_TEMP=$(mktemp /tmp/ptz-patrol-headers-XXXXXX)
-  _BODY_TEMP=$(mktemp /tmp/ptz-patrol-body-XXXXXX)
+  # A child must not remove inherited parent files if it cannot initialize.
+  _COOKIE_TEMP=""; _HEADERS_TEMP=""; _AUTH_HEADERS_TEMP=""; _BODY_TEMP=""
   trap 'api_cleanup' EXIT
+  _COOKIE_TEMP=$(mktemp /tmp/ptz-patrol-cookie-XXXXXX) || return 1
+  _HEADERS_TEMP=$(mktemp /tmp/ptz-patrol-headers-XXXXXX) || return 1
+  _AUTH_HEADERS_TEMP=$(umask 077; mktemp /tmp/ptz-patrol-auth-XXXXXX) || return 1
+  _BODY_TEMP=$(mktemp /tmp/ptz-patrol-body-XXXXXX) || return 1
   api_load_config
 }
 
 api_cleanup() {
-  rm -f "$_COOKIE_TEMP" "$_HEADERS_TEMP" "$_BODY_TEMP"
+  rm -f "$_COOKIE_TEMP" "$_HEADERS_TEMP" "$_AUTH_HEADERS_TEMP" "$_BODY_TEMP"
   local pids
   pids=$(jobs -p)
   if [[ -n "$pids" ]]; then
@@ -174,20 +178,39 @@ log() {
 # ---------------------------------------------------------------------------
 
 api_auth() {
-  local response
-  response=$(curl -k --connect-timeout 3 --max-time 10 -D "$_HEADERS_TEMP" -c "$_COOKIE_TEMP" -s -X POST \
+  local response payload curl_rc=0
+  _TOKEN=""; _CSRF_TOKEN=""; _LAST_AUTH=0
+  : > "$_AUTH_HEADERS_TEMP" || return 1
+  : > "$_HEADERS_TEMP"
+  payload=$(jq -nc --rawfile u <(printf '%s' "$_USERNAME") --rawfile p <(printf '%s' "$_PASSWORD") \
+    '{username:$u, password:$p, rememberMe:true, token:""}') || return 1
+  response=$(curl -q -k --connect-timeout 3 --max-time 10 -D "$_HEADERS_TEMP" -c "$_COOKIE_TEMP" -s -X POST \
     -H "Content-Type: application/json" \
-    -d "$(jq -n --arg u "$_USERNAME" --arg p "$_PASSWORD" \
-      '{username:$u, password:$p, rememberMe:true, token:""}')" \
-    "$_NVR_ADDRESS/api/auth/login")
-
-  _TOKEN=$(echo "$response" | jq -r '.deviceToken // empty')
-  _CSRF_TOKEN=$(grep -i 'x-csrf-token:' "$_HEADERS_TEMP" | awk '{print $2}' | tr -d '\r')
-
-  if [[ -z "$_TOKEN" ]]; then
-    log "api" "error" "Auth failed"
+    --data-binary @- \
+    "$_NVR_ADDRESS/api/auth/login" <<< "$payload") || curl_rc=$?
+  if (( curl_rc != 0 )); then
+    log "api" "error" "Auth failed — login request error (curl rc $curl_rc)"
     return 1
   fi
+
+  _TOKEN=$(printf '%s' "$response" | jq -r '.deviceToken // empty' 2>/dev/null) || _TOKEN=""
+  if [[ -z "$_TOKEN" ]]; then
+    local protocol header_code _ login_http="" http_info=""
+    while IFS=$' \t\r' read -r protocol header_code _; do
+      if [[ "$protocol" == HTTP/* && "$header_code" =~ ^[0-9]{3}$ ]]; then login_http=$header_code; fi
+    done < "$_HEADERS_TEMP"
+    [[ -z "$login_http" ]] || http_info=" (HTTP $login_http)"
+    log "api" "error" "Auth failed — no device token in login reply$http_info"
+    return 1
+  fi
+  _CSRF_TOKEN=$(grep -i 'x-csrf-token:' "$_HEADERS_TEMP" | awk '{print $2}' | tr -d '\r') || true
+
+  if [[ -z "$_CSRF_TOKEN" ]]; then
+    _TOKEN=""; _CSRF_TOKEN=""
+    log "api" "error" "Auth failed — no CSRF token in login reply"
+    return 1
+  fi
+  printf 'TOKEN: %s\nX-CSRF-Token: %s\n' "$_TOKEN" "$_CSRF_TOKEN" > "$_AUTH_HEADERS_TEMP" || return 1
   _LAST_AUTH=$(date +%s)
   _CONSECUTIVE_FAILURES=0
   log "api" "info" "Authenticated"
@@ -228,8 +251,7 @@ api_get() {
   : > "$_BODY_TEMP"
   _LAST_CURL_RC=0
   _LAST_HTTP_CODE=$(curl -k --connect-timeout 3 --max-time 10 -s -b "$_COOKIE_TEMP" \
-    --header "TOKEN: $_TOKEN" \
-    --header "X-CSRF-Token: $_CSRF_TOKEN" \
+    -H "@$_AUTH_HEADERS_TEMP" \
     -w '%{http_code}' -o "$_BODY_TEMP" \
     "$_NVR_ADDRESS/proxy/protect/api$1") || _LAST_CURL_RC=$?
 
@@ -245,8 +267,7 @@ api_get() {
 api_post() {
   curl -k --connect-timeout 3 --max-time 10 -s -o /dev/null -w "%{http_code}" -X POST \
     "$_NVR_ADDRESS/proxy/protect/api$1" \
-    --header "TOKEN: $_TOKEN" \
-    --header "X-CSRF-Token: $_CSRF_TOKEN" \
+    -H "@$_AUTH_HEADERS_TEMP" \
     -b "$_COOKIE_TEMP"
 }
 
@@ -254,8 +275,7 @@ api_patch() {
   local url=$1 data=$2
   curl -k --connect-timeout 3 --max-time 10 -s -o /dev/null -w "%{http_code}" -X PATCH \
     "$_NVR_ADDRESS/proxy/protect/api$url" \
-    --header "TOKEN: $_TOKEN" \
-    --header "X-CSRF-Token: $_CSRF_TOKEN" \
+    -H "@$_AUTH_HEADERS_TEMP" \
     --header "Content-Type: application/json" \
     -b "$_COOKIE_TEMP" \
     -d "$data"

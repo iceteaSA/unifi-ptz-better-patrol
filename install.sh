@@ -236,13 +236,13 @@ chmod +x "$INSTALL_DIR/uninstall.sh"
             exit 1
         fi
         if [ -n "$ARG_NVR" ]; then
-            jq --arg v "$ARG_NVR" '.nvr_address = $v' "$tmp_cfg" > "$tmp_out" && mv "$tmp_out" "$tmp_cfg"
+            jq --rawfile v <(printf '%s' "$ARG_NVR") '.nvr_address = $v' "$tmp_cfg" > "$tmp_out" && mv "$tmp_out" "$tmp_cfg"
         fi
         if [ -n "$ARG_USER" ]; then
-            jq --arg v "$ARG_USER" '.username = $v' "$tmp_cfg" > "$tmp_out" && mv "$tmp_out" "$tmp_cfg"
+            jq --rawfile v <(printf '%s' "$ARG_USER") '.username = $v' "$tmp_cfg" > "$tmp_out" && mv "$tmp_out" "$tmp_cfg"
         fi
         if [ -n "$ARG_PASS" ]; then
-            jq --arg v "$ARG_PASS" '.password = $v' "$tmp_cfg" > "$tmp_out" && mv "$tmp_out" "$tmp_cfg"
+            jq --rawfile v <(printf '%s' "$ARG_PASS") '.password = $v' "$tmp_cfg" > "$tmp_out" && mv "$tmp_out" "$tmp_cfg"
         fi
         mv "$tmp_cfg" "$local_cfg"
         chmod 0600 "$local_cfg"

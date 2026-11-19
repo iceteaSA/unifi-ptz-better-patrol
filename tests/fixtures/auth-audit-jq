@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+printf '%s\0' "$@" > "$AUTH_AUDIT_DIR/jq-$BASHPID.argv"
+exec "$AUTH_REAL_JQ" "$@"

@@ -52,9 +52,9 @@ discover_ptz_cameras() {
     presets=$(printf '%s' "$presets" | jq '[. // [] | sort_by(.slot) | .[] | {slot, name, ptz: {pan: .ptz.pan, tilt: .ptz.tilt, zoom: .ptz.zoom}}]' 2>/dev/null) || presets="[]"
 
     # Merge presets into the camera object
-    result=$(printf '%s' "$result" | jq --argjson cam "$(printf '%s' "$ptz_cameras" | jq ".[$i]")" \
-      --argjson presets "$presets" \
-      '. + [$cam + {presets: $presets, preset_count: ($presets | length)}]')
+    result=$(printf '%s' "$result" | jq --slurpfile cam <(printf '%s' "$ptz_cameras" | jq ".[$i]") \
+      --slurpfile presets <(printf '%s' "$presets") \
+      '. + [$cam[0] + {presets: $presets[0], preset_count: ($presets[0] | length)}]')
   done
 
   printf '%s' "$result"
@@ -64,7 +64,7 @@ discover_ptz_cameras() {
 discover_duplicate_names() {
   local groups
   groups=$(discover_duplicate_name_groups "$1") || return 1
-  jq -r --argjson groups "$groups" '[$groups[][].id] as $ids | .[] | select(.id as $id | $ids | index($id)) | .id' <<< "$1"
+  jq -r --slurpfile groups <(printf '%s' "$groups") '[$groups[0][][].id] as $ids | .[] | select(.id as $id | $ids | index($id)) | .id' <<< "$1"
 }
 
 # Print duplicate-name groups for one warning per shared name.
@@ -101,7 +101,7 @@ discover_camera_lines() {
 
 # Fixed cameras are missing from the PTZ discovery result. Use the full camera list.
 discover_cue_lines() {
-  jq -r --argjson cameras "$2" '
+  jq -r --slurpfile cameras <(printf '%s' "$2") '
     def zone($source; $requested):
       ([$source.smartDetectZones[]? | select(($requested | type) == "string" and .name == $requested)][0]
         // [$source.smartDetectZones[]? | select((.id | tostring) == ($requested | tostring))][0]);
@@ -110,7 +110,7 @@ discover_cue_lines() {
       elif length == 0 then "    cues:                       none"
       else .[] | if type != "object" then "    cue:                        invalid entry" else
         . as $cue
-        | ([$cameras[] | select(.id == $cue.camera_id)][0]) as $source
+        | ([$cameras[0][] | select(.id == $cue.camera_id)][0]) as $source
         | "    cue:                        \($source.name // .camera_id)→\(.slot)\(if $source == null then " [unknown camera id]" else "" end) types=\((if .types == null then ["person"] else .types end) | tojson) hold=\(if .hold_seconds == null then 30 else .hold_seconds end)s cooldown=\(if .cooldown_seconds == null then 120 else .cooldown_seconds end)s"
           + (if has("zones") then " zones=" + (if (.zones | type) != "array" then "invalid" else
               [.zones[] | . as $requested | zone($source; $requested) as $zone
@@ -130,7 +130,7 @@ get_camera_config() {
   defaults=$(cfg '.defaults')
 
   # Merge: overrides win over defaults
-  echo "$defaults" | jq --argjson o "$overrides" '. * $o'
+  printf '%s' "$defaults" | jq --slurpfile o <(printf '%s' "$overrides") '. * $o[0]'
 }
 
 # Read installed version metadata without spawning external processes.

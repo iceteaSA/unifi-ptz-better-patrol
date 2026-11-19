@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+printf '%s\0' "$@" > "$AUTH_AUDIT_DIR/curl-$BASHPID.argv"
+headers="" body="" previous="" auth=0 header_file=""
+for argument in "$@"; do
+  case "$previous" in
+    -D) headers=$argument ;;
+    -o) body=$argument ;;
+    -H|--header) [[ "$argument" != @* ]] || header_file=${argument#@} ;;
+  esac
+  [[ "$argument" != */api/auth/login ]] || auth=1
+  previous=$argument
+done
+if (( auth )); then
+  if [[ " $* " == *' --data-binary @- '* ]]; then
+    input=""
+    while IFS= read -r line || [[ -n "$line" ]]; do input+="$line"$'\n'; done
+    printf '%s' "$input" > "$AUTH_AUDIT_DIR/login-body.json"
+  fi
+  if [[ "$AUTH_MODE" == failure ]]; then
+    printf 'HTTP/1.1 401 Unauthorized\r\nSet-Cookie: sample-cookie-private\r\n\r\n' > "$headers"
+    printf '{"error":"sample-reply-private"}'; exit 0
+  fi
+  if [[ "$AUTH_MODE" == transfer ]]; then exit 28; fi
+  if [[ "$AUTH_MODE" == empty ]]; then exit 0; fi
+  if [[ "$AUTH_MODE" == malformed ]]; then
+    printf 'HTTP/1.1 200 OK\r\nSet-Cookie: sample-cookie-private\r\n\r\n' > "$headers"
+    printf 'sample-reply-private'; exit 0
+  fi
+  if [[ "$AUTH_MODE" == no-csrf ]]; then printf '{"deviceToken":"%s"}' "$AUTH_TOKEN"; exit 0; fi
+  printf 'HTTP/1.1 200 OK\r\nX-CSRF-Token: %s\r\n\r\n' "$AUTH_CSRF" > "$headers"
+  printf '{"deviceToken":"%s"}' "$AUTH_TOKEN"
+else
+  if [[ -n "$header_file" && -f "$header_file" ]]; then
+    printf '%s\n' "$(< "$header_file")" > "$AUTH_AUDIT_DIR/request-$BASHPID.headers"
+  fi
+  [[ -z "$body" || "$body" == /dev/null ]] || printf '{}' > "$body"
+  printf 200
+fi

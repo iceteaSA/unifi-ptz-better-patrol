@@ -4,6 +4,7 @@
 source "$BATS_TEST_DIRNAME/test_helper.bash"
 
 INSTALL_TEST_DIR=""
+INSTALL_ARGV_FILE=""
 
 installer_code_between() {
   local start=$1 end=$2 line reading=0
@@ -33,6 +34,7 @@ installer_record_temp_modes() {
 
 jq() {
   installer_record_temp_modes
+  [[ -z "$INSTALL_ARGV_FILE" ]] || printf '%s\0' "$@" >> "$INSTALL_ARGV_FILE"
   command jq "$@"
 }
 
@@ -59,6 +61,11 @@ installer_config_probe() (
     ARG_USER=fixture
     ARG_PASS=fixture
   fi
+  if [[ "$mode" == "secure-update" ]]; then
+    printf -v ARG_NVR '%s' 'https://fixture-nvr.invalid'
+    printf -v ARG_USER '%s' $'fixture-user"\n\\'
+    printf -v ARG_PASS '%s' $'fixture-value"\n\\'
+  fi
   local early config
   early=$(installer_code_between '# Config credentials must stay private during updates and bootstrap.' '# Install dependencies')
   eval "$early"
@@ -72,6 +79,22 @@ installer_config_probe() (
     [[ ! -e "$file" ]] || { printf '__temporary_left=1\n'; return 1; }
   done
 )
+
+installer_secure_probe() {
+  INSTALL_ARGV_FILE="$BATS_TEST_TMPDIR/installer.argv"
+  : > "$INSTALL_ARGV_FILE"
+  installer_config_probe secure-update || return
+  local -a arguments=()
+  local argument
+  mapfile -d '' -t arguments < "$INSTALL_ARGV_FILE"
+  for argument in "${arguments[@]}"; do
+    [[ "$argument" != *fixture-nvr* && "$argument" != *fixture-user* && "$argument" != *fixture-value* ]] || {
+      printf '__installer-value-in-argv\n'; return 1
+    }
+  done
+  command jq -e '.nvr_address == "https://fixture-nvr.invalid" and .username == "fixture-user\"\n\\" and .password == "fixture-value\"\n\\"' "$BATS_TEST_TMPDIR/install/config.json" >/dev/null || return
+  printf '__installer-argv-clean-and-roundtrip\n'
+}
 
 installer_temp_modes() {
   local line

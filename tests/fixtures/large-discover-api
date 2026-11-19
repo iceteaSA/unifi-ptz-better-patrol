@@ -1,0 +1,11 @@
+_STATUS_WEBHOOK_URL=""
+api_init() { :; }
+api_auth() { :; }
+cfg() { jq -r "$1" "$LARGE_CONFIG_FILE"; }
+api_get_with_retry() {
+  if [[ "$1" == /cameras ]]; then
+    printf '%s' "$(< "$LARGE_CAMERAS_FILE")"
+  else
+    printf '[]'
+  fi
+}
