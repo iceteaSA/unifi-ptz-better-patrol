@@ -115,7 +115,7 @@ is_externally_controlled() {
     else
       acquisition_streak=0
       _LAST_GOTO_FAILED=1
-      log "$cam_name" "warn" "Goto target not acquired — live position remains off target"
+      log "$cam_name" "warn" "Goto target not acquired — live pan=$live_pan tilt=$live_tilt zoom=$live_zoom, target pan=$expected_pan tilt=$expected_tilt zoom=$expected_zoom"
     fi
     _LAST_ACQUISITION_STATE=$acquisition_state
     _LAST_ACQUISITION_STREAK=$acquisition_streak
@@ -505,13 +505,18 @@ _patrol_parse_tracking_config() {
 
 # Cue arrays and the query use caller scope. Parse one time, not at each poll.
 # Writes cue_camera_ids, cue_slots, cue_types, cue_holds, cue_cooldowns,
-# cue_names, cue_until and cue_query. Reads cam_config and the preset lists.
+# cue_names, cue_zones, cue_until and cue_query. Reads cam_config and the preset lists.
 _patrol_parse_cues() {
-  local src slot hold cooldown types name info=""
+  local src slot hold cooldown types name zone zone_id zone_name zones invalid_zone info=""
   local discovery=${cam_discovery_json:-}
   [[ -n "$discovery" ]] || discovery='{}'
-  local -A names=()
+  local -A names=() zone_names=() zone_ids=() source_ok=()
+  local -a requested_zones=()
   while IFS=$'\t' read -r src slot hold cooldown types; do
+    if [[ "$src" == zone ]]; then
+      requested_zones+=("$slot")
+      continue
+    fi
     if [[ "$src" == invalid ]]; then
       log "$cam_name" "warn" "Invalid cues entry $slot — ignoring"
       continue
@@ -519,9 +524,21 @@ _patrol_parse_cues() {
     src=${src#camera:}
     if [[ -z "${names[$src]+x}" ]]; then
       name=""
+      source_ok["$src"]=0
       api_get "/cameras/$src"
       if [[ "$_LAST_HTTP_CODE" == 200 ]]; then
-        name=$(jq -r 'if (.name | type) == "string" then .name else "" end' <<< "$_LAST_BODY" 2>/dev/null) || name=""
+        # NUL separates records because camera names can contain tabs or newlines.
+        {
+          if IFS= read -r -d '' name; then source_ok["$src"]=1; fi
+          while IFS=$'\t' read -r -d '' zone_id zone_name; do
+            zone_names["$src:$zone_name"]=$zone_id
+            zone_ids["$src:$zone_id"]=$zone_id
+          done
+        } < <(jq -j '
+          (if (.name | type) == "string" then .name else "" end) + "\u0000",
+          (.smartDetectZones[]? | select(.id != null and (.name | type) == "string")
+            | (.id | tostring) + "\t" + (.name | tojson) + "\u0000")
+        ' <<< "$_LAST_BODY" 2>/dev/null)
       fi
       if [[ -z "$name" ]]; then
         name=$src
@@ -530,12 +547,34 @@ _patrol_parse_cues() {
       names["$src"]=$name
       cue_query+="&cameras=$src"
     fi
+    zones=""; invalid_zone=0
+    for zone in "${requested_zones[@]}"; do
+      zone_id=${zone_names["$src:$zone"]:-}
+      if [[ -z "$zone_id" ]]; then
+        zone_name=${zone#\"}; zone_name=${zone_name%\"}
+        if [[ "$zone_name" =~ ^[0-9]+$ ]]; then
+          zone_id=${zone_ids["$src:$zone_name"]:-}
+          if [[ "${source_ok[$src]}" == 0 ]]; then zone_id=$zone_name; fi
+        fi
+      fi
+      if [[ -z "$zone_id" ]]; then
+        [[ "$zone" == \"* ]] || zone="\"$zone\""
+        log "$cam_name" "warn" "Cue zone $zone not found on ${names[$src]} — ignoring this cue entry"
+        invalid_zone=1
+        break
+      fi
+      [[ -n "$zones" ]] || zones=$'\t'
+      zones+="$zone_id"$'\t'
+    done
+    requested_zones=()
+    (( invalid_zone == 0 )) || continue
     cue_camera_ids+=("$src")
     cue_slots+=("$slot")
     cue_holds+=("$hold")
     cue_cooldowns+=("$cooldown")
     cue_types+=($'\t'"$types"$'\t')
     cue_names+=("${names[$src]}")
+    cue_zones+=("$zones")
     cue_until+=(0)
     info+="${info:+, }${names[$src]}→$slot"
   done < <(jq -r --arg self "$cam_id" \
@@ -554,8 +593,11 @@ _patrol_parse_cues() {
             and (.slot | integer) and ($slots | index($cue.slot | tostring)) != null)
           and ($types | type == "array" and length > 0 and all(.[]; type == "string" and length > 0))
           and ($hold | integer and . >= 5) and ($cooldown | integer and . >= 0)
-          then ([("camera:" + .camera_id), (.slot | tostring), ($hold | tostring), ($cooldown | tostring)]
-            + ($types | reduce .[] as $t ([]; if index($t) == null then . + [$t] else . end) | map(tojson))) | join("\t")
+          and (if has("zones") then (.zones | type == "array" and length > 0
+            and all(.[]; type == "string" or (integer and . >= 0))) else true end)
+          then (.zones[]? | ["zone", tojson] | join("\t")),
+            (([("camera:" + .camera_id), (.slot | tostring), ($hold | tostring), ($cooldown | tostring)]
+            + ($types | reduce .[] as $t ([]; if index($t) == null then . + [$t] else . end) | map(tojson))) | join("\t"))
           else "invalid\t\($index)" end
       end
     end
@@ -568,9 +610,9 @@ _patrol_parse_cues() {
 # cue_pending, cue_match, cue_matched_at, cue_until and cue_poll_failed.
 # A poll error must not hold patrol.
 _patrol_poll_cues() {
-  local now cutoff id src start types rows i j etype
+  local now cutoff id src start zones types rows i j etype zone_id zone_match
   local poll_error=0
-  local -a event_cameras=() event_types=() event_ids=() event_starts=() tokens=()
+  local -a event_cameras=() event_types=() event_ids=() event_starts=() event_zones=() tokens=() zone_tokens=()
   cue_pending=-1
   printf -v now '%(%s)T' -1
   cutoff=$(( (now - 15) * 1000 ))
@@ -589,7 +631,8 @@ _patrol_poll_cues() {
       | select((.id | type) == "string" and (.id | length) > 0
         and (.camera | type) == "string" and (.start | type) == "number"
         and (.start | floor) == .start and (.smartDetectTypes | type) == "array")
-      | [(.id | tojson), (.camera | tojson), (.start | tostring)]
+      | [(.id | tojson), (.camera | tojson), (.start | tostring),
+          (.metadata.zonesStatus | if type == "object" then keys else [] end | tojson)]
         + [.smartDetectTypes[] | select(type == "string" and length > 0) | tojson]
       | join("\t")
     ' <<< "$_LAST_BODY" 2>/dev/null) || poll_error=1
@@ -608,7 +651,7 @@ _patrol_poll_cues() {
   [[ "$_LAST_BODY" != '[]' ]] || return 1
   printf -v now '%(%s)T' -1
   cutoff=$(( (now - 15) * 1000 ))
-  while IFS=$'\t' read -r id src start types; do
+  while IFS=$'\t' read -r id src start zones types; do
     [[ -n "$id" && -n "$types" ]] || continue
     [[ "$start" =~ ^[0-9]+$ ]] || continue
     (( start >= cutoff && start <= now * 1000 )) || continue
@@ -617,12 +660,21 @@ _patrol_poll_cues() {
     event_types+=("$types")
     event_ids+=("$id")
     event_starts+=("$start")
+    event_zones+=("$zones")
   done <<< "$rows"
   for (( i=0; i<${#cue_slots[@]}; i++ )); do
     (( now >= cue_until[i] )) || continue
     [[ "${cue_slots[$i]}" != "$last_commanded_slot" ]] || continue
     for (( j=0; j<${#event_cameras[@]}; j++ )); do
       [[ "${event_cameras[$j]}" == "\"${cue_camera_ids[$i]}\"" ]] || continue
+      if [[ -n "${cue_zones[$i]:-}" ]]; then
+        zone_match=0
+        IFS=$'\t' read -r -a zone_tokens <<< "${cue_zones[$i]}"
+        for zone_id in "${zone_tokens[@]}"; do
+          if [[ "${event_zones[$j]}" == *\""$zone_id"\"* ]]; then zone_match=1; break; fi
+        done
+        (( zone_match )) || continue
+      fi
       IFS=$'\t' read -r -a tokens <<< "${event_types[$j]}"
       for etype in "${tokens[@]}"; do
         if [[ "${cue_types[$i]}" == *$'\t'"$etype"$'\t'* ]]; then
@@ -1110,7 +1162,7 @@ patrol_camera() {
   local preset_positions
   preset_positions=$(api_get_preset_positions "$cam_id")
 
-  local -a cue_camera_ids=() cue_slots=() cue_types=() cue_holds=() cue_cooldowns=() cue_names=() cue_until=()
+  local -a cue_camera_ids=() cue_slots=() cue_types=() cue_holds=() cue_cooldowns=() cue_names=() cue_until=() cue_zones=()
   local -A cue_seen=()
   local cue_query="" cue_pending=-1 cue_match="" cue_in_progress=0 cue_resume=0 cue_hold=0
   local cue_matched_at=0 cue_poll_failed=0
@@ -1439,6 +1491,16 @@ patrol_camera() {
         activity_active=1
       else
         activity_active=0
+      fi
+      if [[ "$hold_reason" == tracking ]] && (( _LAST_ACTIVITY_KNOWN == 0 || _LAST_SMART_ACTIVE == 0 || _LAST_TRACKING_ACTIVE == 0 )); then
+        local end_position end_pan end_tilt end_zoom
+        end_position=$(api_get_ptz_position "$cam_id") || end_position=""
+        IFS=$'\t' read -r end_pan end_tilt end_zoom <<< "$end_position"
+        if [[ "$end_pan" =~ ^[0-9]+$ && "$end_tilt" =~ ^[0-9]+$ && "$end_zoom" =~ ^[0-9]+$ ]]; then
+          log "$cam_name" "info" "Tracking ended at pan $end_pan tilt $end_tilt zoom $end_zoom"
+        else
+          log "$cam_name" "info" "Tracking ended (position unreadable)"
+        fi
       fi
       _patrol_refresh_camera_name
       if (( _LAST_ACTIVITY_KNOWN == 0 )); then

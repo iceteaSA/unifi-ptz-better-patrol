@@ -10,6 +10,13 @@ setup() {
   PATROL_SETTLE_CALLS=0
 }
 
+@test "failed acquisition warning includes live and expected coordinates" {
+  run external_probe $'1234\t5678\t90' 8500 10200 250 acquiring 0
+  [ "$status" -eq 1 ]
+  assert_contains "$output" 'Goto target not acquired — live pan=1234 tilt=5678 zoom=90, target pan=8500 tilt=10200 zoom=250'
+  assert_contains "$output" 'goto_failed=1 acquisition=acquiring/0'
+}
+
 @test "production pan drift converging toward target never holds" {
   PTZ_READS=(
     $'11600\t10400\t100'

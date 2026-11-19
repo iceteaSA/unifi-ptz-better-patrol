@@ -9,7 +9,7 @@ done
 case "$url" in
   */events\?*) body='[]' ;;
   */goto/*) printf 204; exit 0 ;;
-  *) body='{"id":"cam1","name":"Fixed One","state":"CONNECTED"}' ;;
+  *) body='{"id":"cam1","name":"Fixed One","state":"CONNECTED","smartDetectZones":[{"id":1,"name":"Default"},{"id":2,"name":"Trail mouth"}]}' ;;
 esac
 printf '%s' "$body" > "$body_file"
 printf 200
