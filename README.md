@@ -622,7 +622,23 @@ journalctl -u ptz-patrol.service -p warning                # Warnings and errors
 
 ## Troubleshooting
 
+### Logs stop partway through the day
+
+Before 1.6.1, the service limits logs to 10,000 lines in a 1-day window. Four cameras can use that budget by mid-morning. Patrol continues, but journald drops later lines.
+
+Check for dropped messages:
+
+```fish
+journalctl -u systemd-journald | grep 'Suppressed .* ptz-patrol'
+```
+
+With a 1-day window, journald reports the suppression only when the next window starts. Upgrade to 1.6.1 or later. The updated unit permits 2000 lines in each 30-second window, which still limits a runaway loop. The installer replaces the unit and reloads systemd on upgrade. Bootstrap restores it after a firmware update removes the unit.
+
+A service restart does not restore logging inside the rate-limit window. The broken-socket case below has the same symptom.
+
 ### The service looks dead but is still running
+
+Rule out the rate limit above first. The stdout-socket test below distinguishes a broken socket from rate limiting.
 
 **Symptom:** `journalctl -u ptz-patrol` produces no output, while `systemctl status ptz-patrol` shows an active service with a live MainPID. The per-camera subshells are also alive in `ps --ppid <MainPID>`. Restarting `ptz-patrol` does not restore logging, including the startup banner.
 

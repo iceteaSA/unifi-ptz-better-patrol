@@ -23,10 +23,10 @@ UnsetEnvironment=http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PRO
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectHome=yes
-# 24h window for log rate limiting
-LogRateLimitIntervalSec=86400
-# Allow 10k logs/day
-LogRateLimitBurst=10000
+# A daily budget silences logs by mid-morning with four cameras.
+# A 30-second window still limits a runaway loop.
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=2000
 
 [Install]
 WantedBy=multi-user.target
