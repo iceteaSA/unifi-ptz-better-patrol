@@ -6,7 +6,7 @@ Motion-aware PTZ camera patrol system for Ubiquiti UniFi Protect devices running
 
 Confirmed working on: UDM, UDR, UNVR (any device running UniFi Protect with PTZ cameras)
 
-Tested with: **G5 PTZ** and **G6 PTZ** cameras only. Other UniFi PTZ models may work but are untested.
+Tested with: **G5 PTZ**, **G6 PTZ**, and **AI PTZ Industrial** cameras only. Other UniFi PTZ models may work but are untested.
 
 > **Warning — Use at your own risk.** This software continuously moves PTZ cameras through preset positions. The pan/tilt motors in some cameras (particularly the G5 PTZ) may not be rated for sustained, continuous patrol operation. Extended use could accelerate motor wear or cause mechanical failure. The authors take no responsibility for any hardware damage, reduced camera lifespan, or warranty implications. **You have been warned.**
 
@@ -716,7 +716,7 @@ If this project is useful to you, consider supporting continued development:
 
 **Disclaimer**: This is a community project — not affiliated with or endorsed by Ubiquiti Inc. The authors accept no liability for hardware damage, motor wear, reduced camera lifespan, or any other consequences of using this software. PTZ cameras are mechanical devices; continuous automated patrol increases wear on pan/tilt/zoom motors beyond typical manual use. Use at your own risk.
 
-**Compatibility**: Verified on UniFi OS 4.0.0+ with G5 PTZ and G6 PTZ cameras.
+**Compatibility**: Verified on UniFi OS 4.0.0+ with G5 PTZ, G6 PTZ, and AI PTZ Industrial cameras.
 **License**: MIT
 
 ### Keywords
