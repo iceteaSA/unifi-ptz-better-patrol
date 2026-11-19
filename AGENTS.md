@@ -154,8 +154,8 @@ logs. `config.json.example` is the schema and gets copied to `config.json` on in
 - `status_webhook_url` is a secret. Do not log it. `curl` uses `-q` first and `-K -` stdin.
 - `install.sh` sets `config.json` to `0600`. `ptz-patrol.sh` removes group and other access
   at each start.
-- Merge happens in exactly one place: `get_camera_config` does
-  `jq --argjson o "$overrides" '. * $o'` (deep merge, `camera_overrides[id]` wins over `defaults`).
+- Merge only in `get_camera_config`. Read overrides with `--slurpfile o` and use
+  `. * $o[0]` for the deep merge. On a key conflict, use `camera_overrides[id]`, not `defaults`.
 - Field defaults are applied at read time with jq `//` fallbacks in `patrol_camera`.
   For a boolean that can be `false`, use `if .x == null then <default> else .x end`
   (see `.enabled`), because `//` reads `false` as missing.
