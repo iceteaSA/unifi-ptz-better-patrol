@@ -578,9 +578,9 @@ _patrol_parse_cues() {
     cue_until+=(0)
     info+="${info:+, }${names[$src]}→$slot"
   done < <(jq -r --arg self "$cam_id" \
-    --argjson positions "${preset_positions:-[]}" --argjson discovery "$discovery" '
+    --slurpfile positions <(printf '%s' "${preset_positions:-[]}") --slurpfile discovery <(printf '%s' "$discovery") '
     def integer: type == "number" and floor == .;
-    ([$positions[].slot | tostring] + [$discovery.presets[]?.slot | tostring]) as $slots
+    ([$positions[0][].slot | tostring] + [$discovery[0].presets[]?.slot | tostring]) as $slots
     | if .cues == null then [] else .cues end
     | if type != "array" then "invalid\t<array>" else
       to_entries[] | .key as $index | .value
