@@ -4,7 +4,7 @@
 
 Motion-aware PTZ camera patrol system for Ubiquiti UniFi Protect devices running UniFi OS.
 
-Confirmed working on: UDM, UDR, UNVR (any device running UniFi Protect with PTZ cameras)
+Confirmed working on: UDM, UDR, UNVR, UNVR Pro (any device running UniFi Protect with PTZ cameras)
 
 Tested with: **G5 PTZ**, **G6 PTZ**, and **AI PTZ Industrial** cameras only. Other UniFi PTZ models may work but are untested.
 
@@ -20,10 +20,14 @@ Tested with: **G5 PTZ**, **G6 PTZ**, and **AI PTZ Industrial** cameras only. Oth
 - **Auto-Setup**: Automatically disables conflicting Protect settings on startup (built-in patrols, return-to-home, and static auto-tracking when dynamic mode is enabled)
 - **Auto-Discovery**: Finds all connected PTZ cameras and their preset positions automatically
 - **Per-Camera Overrides**: Customize dwell time, motion hold, and preset slots per camera
+- **Per-Preset Dwell and Path Mode**: Set a dwell time for each preset, and patrol the presets in a loop or back and forth (`pingpong`)
+- **Fixed-Camera Cues**: A smart detection on a fixed camera sends an idle PTZ to a mapped preset. Cues can filter by object type and smart zone. When the PTZ loses a track, a cue can send it to where a fixed camera sees the subject now
+- **HomeView Handling**: When Protect sends the camera back to its HomeView, patrol does not treat the move as manual control
+- **Home Assistant Status**: An optional webhook posts the patrol state of each camera and a periodic heartbeat
 - **Optional Patrol Schedule**: Restrict patrol to specific time windows and days of the week, with optional "go home" when paused
 - **Parallel Patrol Loops**: Each camera runs its own independent patrol process with isolated auth
 - **Configurable Log Levels**: Control verbosity with `error`, `warn`, `info`, or `debug`
-- **Max Wait Protection**: Configurable timeout prevents indefinite tracking holds
+- **Hold Limits**: `max_tracking_wait` limits holds for motion only, and `max_smart_wait` limits holds for smart detection or tracking (`0` removes that limit)
 - **Resilient Operation**: Automatic retry with exponential backoff, per-camera restart on errors
 - **Graceful Shutdown**: Clean SIGTERM handling with optional "go home" on service stop
 - **Re-Auth Handling**: Transparent token refresh keeps long-running patrols alive
@@ -74,7 +78,7 @@ PTZ_PATROL_BRANCH=dev curl -sSL https://raw.githubusercontent.com/iceteaSA/unifi
 
 The installer is the trust root. It is fetched from GitHub over HTTPS with certificate validation, then downloads the files systemd will run as root. Read `install.sh` before piping it to `bash` if you want to verify what it does. Remote installs resolve the selected branch to a commit before downloading. Every file then comes from that commit. If GitHub's API cannot resolve the branch, the installer prints a warning and falls back to the branch URL. Local-checkout installs record the checkout's commit when Git is available.
 
-The installer writes `/data/ptz-patrol/install-info` with `ref`, `commit`, and UTC `installed_at` values. The daemon logs its version and commit at startup, for example `ptz-patrol 1.1.0 (main@c61700a) starting`. The `discover.sh` output header prints the same version string. Bootstrap does not change this metadata.
+The installer writes `/data/ptz-patrol/install-info` with `ref`, `commit`, and UTC `installed_at` values. The daemon logs its version and commit at startup, for example `ptz-patrol 1.7.0 (main@33e810b) starting`. The `discover.sh` output header prints the same version string. Bootstrap does not change this metadata.
 
 ### Manual Installation
 
@@ -208,7 +212,7 @@ With `zones`, an event must list at least one of the cue's zones with a status o
 
 Zone ids stay usable if the startup camera read fails. Zone names do not. If the read succeeds, the id must exist on that camera. Discovery shows zone names and marks unknown zones.
 
-The cue log names the matched zone, for example `Cue: Horsetrail Up person (Past pole) → slot 0`. If no name is known, it shows the zone id. An entry without zones keeps the log without a zone name.
+The cue log names the matched zone, for example `Cue: Path Cam person (Far side) → slot 0`. If no name is known, it shows the zone id. An entry without zones keeps the log without a zone name.
 
 Patrol checks cues at preset and home dwell polls, after activity and manual-control checks. Normal cue checks stop during activity, tracking, manual holds, schedule pauses, unreadable camera state, and cue dwell. The first applicable entry in config order wins. A cue for the current slot is skipped. Each entry has its own cooldown, which starts when that entry fires.
 
@@ -364,7 +368,7 @@ The JSON payload has these fields:
   "slot": 4,
   "since": 1794513600,
   "ts": 1794513900,
-  "version": "1.2.0 (main@unknown)",
+  "version": "1.7.0 (main@33e810b)",
   "cue_camera": null
 }
 ```
@@ -499,8 +503,9 @@ The tag uses the camera name from Protect. Cameras with the same name add the la
      └─────┬──────┘
            │ no
      ┌─────▼──────┐
-      │  Tracking  │──yes──> Hold (check every 5s; smart/motion caps)
-     │  active?   │         (advance to next preset when clear)
+     │  Tracking  │──yes──> Hold (check every 5s; smart/motion caps)
+     │  active?   │         (advance to next preset when clear;
+     │            │          a cue can end the hold after a lost track)
      └─────┬──────┘
            │ no
      ┌─────▼──────┐
@@ -514,8 +519,9 @@ The tag uses the camera name from Protect. Cameras with the same name add the la
      │  │  induced motion after goto     │
      │  ├─ Check PTZ position drift      │──> Hold if external control
      │  │  (pan/tilt/zoom vs expected)   │    (skipped when tracking)
-     │  └─ Check motion/tracking         │──> Hold if activity detected
-     │                                   │    (back to tracking check)
+     │  ├─ Check motion/tracking         │──> Hold if activity detected
+     │  │                                │    (back to tracking check)
+     │  └─ Check fixed-camera cues       │──> Go to the cue preset
      └─────┬──────────────────────────────┘
            │
      next preset ──> (loop)
@@ -539,7 +545,7 @@ This catches manual control on **all three axes** — pan, tilt, and zoom — in
 
 The patrol hold checks these signals in priority order:
 1. **External control** — pan/tilt/zoom drift from expected preset position
-2. **Auto-tracking flag** (`isAutoTracking`, `isPtzAutoTracking`, `isTracking`) — firmware-dependent, may not exist
+2. **Tracking** — a smart detection (`isSmartDetected`) while the camera has auto-tracking object types (`smartDetectSettings.autoTrackingObjectTypes`). Patrol also reads the status flags `isAutoTracking`, `isPtzAutoTracking`, and `isTracking`, but the tested G5, G6, and AI PTZ firmware does not send them
 3. **Smart detection** (`isSmartDetected`) — real-time boolean; true when person, vehicle, animal, etc. is actively detected. Sets the internal `_LAST_SMART_ACTIVE` flag used by dynamic auto-tracking
 4. **Motion detection** (`isMotionDetected`) — real-time boolean for active motion; also catches pan/tilt manual control during dwell
 5. **Motion timestamp fallback** (`lastMotion`) — covers the hold window tail after `isMotionDetected` clears
@@ -558,7 +564,7 @@ The patrol hold checks these signals in priority order:
 
 In a production four-camera UNVR deployment reported on 2026-08-09, a site-wide power outage left the NVR running on UPS while all four cameras were down for about 2.5 hours. Every patrol loop held position through the camera-disconnected fail-safe path. The surrounding journal contains zero `Patrol loop exited — restarting in 10s` entries across about 14 hours, all four camera subshells kept their original PIDs, and patrol resumed without operator action when camera power returned.
 
-The journal has a gap during the outage because of the journald fault described below. This is a field report, not a lab result: the evidence for the outage window is the surviving process table and the surrounding hours of logs, not a continuous record.
+The journal has a gap during the outage. The most likely cause is the log rate limit in versions before 1.6.1, described in Troubleshooting. This is a field report, not a lab result: the evidence for the outage window is the surviving process table and the surrounding hours of logs, not a continuous record.
 
 ## Resource Usage
 
@@ -569,7 +575,7 @@ The original three-camera figures below came from a UNVR with 30s dwell and 5s p
 | **Memory** | ~11 MB total | Not measured | The baseline is ~3 MB per process (1 main + 1 per camera). |
 | **CPU** | ~8% of one core | 9.3% of one core | The field measurement was `CPUUsageNSec = 129022000000` over a 1387s active window. An independent ~16.5-hour lifetime average on the same deployment also measured 9.3%, including the camera outage; that is a coarse average with no measurable increase during fail-safe holding, not a controlled comparison. |
 | **Processes** | 4 bash | 6 processes | The field deployment showed 1 main process + 4 camera subshells + 1 `sleep` for rediscovery. |
-| **Temp files** | 12 | Not measured | 3 per process in the baseline (cookie, headers, body); cleaned on exit. |
+| **Temp files** | 12 | Not measured | 3 per process in the baseline (cookie, headers, body). From 1.6.1 there are 4 per process: the session headers have their own file. Patrol removes them on exit. |
 | **File descriptors** | 3-4 per process | Not measured | Minimal; no long-lived connections. |
 
 ## Monitoring & Logging
@@ -578,7 +584,7 @@ Key operational signals:
 
 ```log
 # Discovery
-[2026-03-10 12:00:00] [INFO] [main] ptz-patrol 1.1.0 (main@c61700a) starting
+[2026-03-10 12:00:00] [INFO] [main] ptz-patrol 1.7.0 (main@33e810b) starting
 [2026-03-10 12:00:00] [INFO] [main] Discovering PTZ cameras...
 [2026-03-10 12:00:01] [INFO] [main] Found 3 PTZ camera(s) — launching patrol loops
 
@@ -594,6 +600,16 @@ Key operational signals:
 # Motion during dwell
 [2026-03-10 12:05:02] [INFO] [Gate PTZ] Activity during dwell — holding
 [2026-03-10 12:05:02] [INFO] [Gate PTZ] Tracking/motion active — holding (motion)
+
+# Goto that the camera did not complete (patrol sends it again)
+[2026-03-10 12:06:15] [WARN] [Gate PTZ] Goto target not acquired — live pan=22562 tilt=11078 zoom=0, target pan=20663 tilt=11737 zoom=0
+[2026-03-10 12:06:15] [WARN] [Gate PTZ] Re-issued goto for slot 1 after failed execution (attempt 1/2, HTTP 200)
+
+# Fixed-camera cues
+[2026-03-10 12:00:02] [INFO] [Pole PTZ] Cues: Gate Cam→4, Path Cam→0, Path Cam→3
+[2026-03-10 12:07:10] [INFO] [Pole PTZ] Cue: Gate Cam person (Trail) → slot 4
+[2026-03-10 12:07:52] [INFO] [Pole PTZ] Tracking ended at pan 25436 tilt 9565 zoom 1381
+[2026-03-10 12:07:52] [INFO] [Pole PTZ] Tracking lost — Cue: Path Cam person (Far side) → slot 0
 
 # Camera with no presets configured
 [2026-03-10 12:00:03] [WARN] [Back Yard] Only 0 preset(s) — need 2+. Skipping.
@@ -643,42 +659,23 @@ journalctl -u ptz-patrol.service -p warning                # Warnings and errors
 
 ### Logs stop partway through the day
 
-Before 1.6.1, the service limits logs to 10,000 lines in a 1-day window. Four cameras can use that budget by mid-morning. Patrol continues, but journald drops later lines.
+**Symptom:** `journalctl -u ptz-patrol` shows no new lines, but `systemctl status ptz-patrol` shows an active service with a live MainPID, and the cameras still move. A restart of `ptz-patrol` does not bring the logs back, not even the startup banner.
+
+Before 1.6.1, the service limits logs to 10,000 lines in a 1-day window. Four cameras can use that budget by mid-morning. Patrol continues, but journald drops the later lines. journald keeps this limit for each unit, so a service restart does not reset it.
 
 Check for dropped messages:
 
-```fish
+```bash
 journalctl -u systemd-journald | grep 'Suppressed .* ptz-patrol'
 ```
 
 With a 1-day window, journald reports the suppression only when the next window starts. Upgrade to 1.6.1 or later. The updated unit permits 2000 lines in each 30-second window, which still limits a runaway loop. The installer replaces the unit and reloads systemd on upgrade. Bootstrap restores it after a firmware update removes the unit.
 
-A service restart does not restore logging inside the rate-limit window. The broken-socket case below has the same symptom.
+`systemctl restart systemd-journald` clears journald's rate-limit state inside the window, but upgrading is the fix.
 
-`systemctl restart systemd-journald` clears journald's rate-limit state in the window, but upgrading is the fix.
+To confirm that patrol still runs while the log is silent, watch a camera in the Protect app for one dwell period. Do not use the log for this check.
 
-### The service looks dead but is still running
-
-Rule out the rate limit above first. The stdout-socket test below distinguishes a broken socket from rate limiting.
-
-**Symptom:** `journalctl -u ptz-patrol` produces no output, while `systemctl status ptz-patrol` shows an active service with a live MainPID. The per-camera subshells are also alive in `ps --ppid <MainPID>`. Restarting `ptz-patrol` does not restore logging, including the startup banner.
-
-This was reported from a live UNVR deployment. The cause was a wedged journald stdout-stream listener. systemd gives the service a socket connected to journald; when that listener breaks, the service's socket is connected to nothing. Restarting the service gets another socket from the same broken listener, so the symptom remains. The patrol loops keep running normally, but writes to the dead socket fail silently. Logs from the wedged window are discarded, not buffered, and cannot be recovered.
-
-A power event and a corrupted rotated journal file from an earlier boot were contributing factors in the reported case. NVRs often stay up on a UPS while their journals take corruption during a power event.
-
-Test the service's stdout socket directly, replacing `<MainPID>` with the PID from `systemctl status`:
-
-```bash
-echo test > /proc/<MainPID>/fd/1
-```
-
-`No such device or address` confirms that the socket has no peer. Restart journald, then the patrol service:
-
-```bash
-systemctl restart systemd-journald && systemctl restart ptz-patrol
-```
-
+> **NOTE:** `echo test > /proc/<MainPID>/fd/1` does not test the journald connection. The service's stdout is a socket, and Linux does not open a socket through `/proc`. The command fails with `No such device or address` also when logging works. Earlier versions of this README gave that command as a test.
 ## Maintenance
 
 Upgrades from versions before 1.2.0 use that version's installer: the daemon logs the version, but `install-info` records the commit after the next `install.sh` run.
@@ -712,6 +709,8 @@ The discovery header reports the installed version and commit. Each camera block
 - **discover.sh**: PTZ camera discovery and config dump (dual-mode: sourceable + standalone). Fetches presets from the per-camera `/ptz/preset` endpoint (the `ptzPresetPositions` field on camera objects is empty on many firmware versions)
 - **patrol.sh**: Core per-camera patrol loop with manual control detection, active dwell monitoring, and error resilience
 - **config.json.example**: Example configuration template (copied to `config.json` on install)
+- **VERSION** and **CHANGELOG.md**: Release version and release notes, managed by release-please
+- **tests/**: Offline bats tests, run by CI with jq 1.6 (see `tests/README.md`)
 - **install.sh**: Installation script with optional `--nvr`, `--username`, `--password` flags
   - Supports installation from different branches via the `PTZ_PATROL_BRANCH` environment variable
   - Automatically downloads required files if not found locally
@@ -740,4 +739,4 @@ If this project is useful to you, consider supporting continued development:
 
 ### Keywords
 
-unifi, unifi-protect, ptz, ptz-patrol, ptz-tour, pan-tilt-zoom, g5-ptz, g6-ptz, ubiquiti, udm, udr, unvr, camera-patrol, preset-tour, motion-aware, auto-tracking, home-assistant-alternative, bash, systemd, unifi-os
+unifi, unifi-protect, ptz, ptz-patrol, ptz-tour, pan-tilt-zoom, g5-ptz, g6-ptz, ubiquiti, udm, udr, unvr, camera-patrol, preset-tour, motion-aware, auto-tracking, ai-ptz, camera-cues, home-assistant-alternative, bash, systemd, unifi-os
