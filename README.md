@@ -216,7 +216,14 @@ After a track is lost, cues can end the activity hold and re-acquire the subject
 
 This includes the poll that ends the hold. These checks use the usual poll interval, with no additional sleep. Holds that never had tracking do not check cues.
 
-Re-acquire checks read events that started in the last 120 seconds. For an event older than 15 seconds, a configured zone must show `enter` or `moving`. Without a zone filter, any event zone with `enter` or `moving` is sufficient. An event from the last 15 seconds can also match the normal zone rule. A current `enter` or `moving` match has priority over a recent match with another status. Config order breaks ties. A hit logs `Tracking lost — Cue: <name> <type> (<zone name>) → slot N` and uses the usual cue goto, hold, status, and resume path.
+Re-acquire checks read events that started in the last 120 seconds:
+
+- For an event older than 15 seconds, a configured zone must show `enter` or `moving`. This status means that the subject is in the zone now.
+- Without a zone filter, any event zone with `enter` or `moving` is sufficient.
+- An event from the last 15 seconds can also match the normal zone rule.
+- A match with `enter` or `moving` has priority over a match with another status. Config order breaks ties.
+
+A hit logs `Tracking lost — Cue: <name> <type> (<zone name>) → slot N`. It then uses the usual cue goto, hold, status, and resume path.
 
 The cue uses the usual goto, target acquisition, retry, drift, and HomeView checks. It uses `hold_seconds` for the dwell. The PTZ's own activity can extend that dwell through the usual hold. Motion-only time uses `max_tracking_wait`; smart detection or tracking uses `max_smart_wait`. Unknown activity stays on hold without a cap. Cues do not extend a cue hold.
 
