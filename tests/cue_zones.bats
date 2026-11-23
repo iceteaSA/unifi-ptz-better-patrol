@@ -57,7 +57,7 @@ setup() {
   [ "$status" -eq 0 ]
   assert_contains "$output" 'Cue zone "Missing" not found on Fixed One — ignoring this cue entry'
   assert_contains "$output" '__entries=1'
-  assert_contains "$output" 'Cue: Fixed One person → slot 4'
+  assert_contains "$output" 'Cue: Fixed One person (Trail mouth) → slot 4'
   assert_contains "$output" '__first=0 seen=1 warnings=1'
   assert_contains "$output" '__requests=/cameras/fixed1 /events?'
 }
@@ -75,7 +75,7 @@ setup() {
   run zone_probe '[{"camera_id":"fixed1","slot":4,"zones":[2],"types":["person"]}]' two-zones
   [ "$status" -eq 0 ]
   assert_contains "$output" '__first=0 seen=1 warnings=0'
-  assert_contains "$output" 'Cue: Fixed One person → slot 4'
+  assert_contains "$output" 'Cue: Fixed One person (Trail mouth) → slot 4'
 }
 
 @test "failed source read drops named zones but leaves numeric zones usable" {

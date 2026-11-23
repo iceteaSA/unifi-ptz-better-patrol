@@ -204,9 +204,19 @@ Set `camera_overrides.<ptz id>.cues` to send a PTZ to a preset when a fixed came
 
 Patrol checks entries one time at startup. It drops each invalid entry with one warning. It reads each source camera's Protect name one time. If patrol cannot read the name, it uses the id and logs a warning. Discovery shows the names and marks unknown camera ids.
 
-With `zones`, an event must contain at least one of the cue's zones and one of its types. Patrol resolves zones at startup from the source camera's `smartDetectZones`. An exact name match comes first, then an id match. If a zone does not resolve, patrol logs `Cue zone "<zone>" not found on <source> — ignoring this cue entry` and drops only that entry. Zone ids stay usable if the startup camera read fails. Zone names do not. If the read succeeds, the id must exist on that camera. Discovery shows zone names and marks unknown zones. Events outside the filter stay eligible: patrol checks their zones again until they fire a cue or leave the 15-second window.
+With `zones`, an event must list at least one of the cue's zones with a status other than `none`, and one of its types. Patrol resolves zones at startup from the source camera's `smartDetectZones`. An exact name match comes first, then an id match. If a zone does not resolve, patrol logs `Cue zone "<zone>" not found on <source> — ignoring this cue entry` and drops only that entry.
 
-Patrol checks cues at preset and home dwell polls, after activity and manual-control checks. Cue checks stop during activity, tracking, manual holds, schedule pauses, unreadable camera state, and cue dwell. The first applicable entry in config order wins. A cue for the current slot is skipped. Cooldown starts when the cue fires.
+Zone ids stay usable if the startup camera read fails. Zone names do not. If the read succeeds, the id must exist on that camera. Discovery shows zone names and marks unknown zones.
+
+The cue log names the matched zone, for example `Cue: Horsetrail Up person (Past pole) → slot 0`. If no name is known, it shows the zone id. An entry without zones keeps the log without a zone name.
+
+Patrol checks cues at preset and home dwell polls, after activity and manual-control checks. Normal cue checks stop during activity, tracking, manual holds, schedule pauses, unreadable camera state, and cue dwell. The first applicable entry in config order wins. A cue for the current slot is skipped. Each entry has its own cooldown, which starts when that entry fires.
+
+After a track is lost, cues can end the activity hold and re-acquire the subject. Once an activity hold has had a tracking poll, each later poll can check cues. The PTZ must be readable, must not track, and must have no active smart detection.
+
+This includes the poll that ends the hold. These checks use the usual poll interval, with no additional sleep. Holds that never had tracking do not check cues.
+
+Re-acquire checks read events that started in the last 120 seconds. For an event older than 15 seconds, a configured zone must show `enter` or `moving`. Without a zone filter, any event zone with `enter` or `moving` is sufficient. An event from the last 15 seconds can also match the normal zone rule. A current `enter` or `moving` match has priority over a recent match with another status. Config order breaks ties. A hit logs `Tracking lost — Cue: <name> <type> (<zone name>) → slot N` and uses the usual cue goto, hold, status, and resume path.
 
 The cue uses the usual goto, target acquisition, retry, drift, and HomeView checks. It uses `hold_seconds` for the dwell. The PTZ's own activity can extend that dwell through the usual hold. Motion-only time uses `max_tracking_wait`; smart detection or tracking uses `max_smart_wait`. Unknown activity stays on hold without a cap. Cues do not extend a cue hold.
 
@@ -218,7 +228,9 @@ Patrol sends the cue goto one time. The usual bounded goto retries can send that
 
 Before the cue goto, patrol checks the time since the cue match. After more than 15 seconds, patrol drops the cue. This also applies after a schedule pause, manual hold, activity hold, or unreadable camera state. It logs `Cue dropped — <age>s old` and uses the path step selected by the half-dwell rule. Dynamic tracking does not skip that step.
 
-Patrol reads smart-detection events from the last 15 seconds. An event can become available while cue checks are off. It can fire when checks start again, but only in that 15-second window. Protect lists new events about 3 seconds after their start. Patrol ignores the event's `end` field. Each event can fire only one cue. Patrol reads its types again at each poll until it fires a cue or leaves the 15-second start window. This also applies when a cue is in cooldown or uses the PTZ's current slot.
+Normal cue polls read smart-detection events that started in the last 15 seconds. An event can become available while cue checks are off. It can fire when checks start again within the applicable start window. Protect lists new events about 3 seconds after their start. Patrol ignores the event's `end` field: a null value does not prove that the subject is present.
+
+Each cue entry can fire only once per event. Another entry can fire on the same event later, for example when the subject moves to another zone. Patrol reads event types and zone status again at each poll. This also applies when an entry is in cooldown or uses the PTZ's current slot. Fired entries stay in the seen map until their event start is older than 120 seconds.
 
 Missing or empty `cues` adds no poll or goto processes and no HTTP requests. An empty event poll starts one curl and no jq. An event request error gives no cue and does not stop patrol.
 

@@ -105,7 +105,7 @@ cue_poll_probe() {
     CUE_NOW=1002
     _patrol_poll_cues || true
     printf '__third=%s seen=%s\n' "$cue_pending" "${#cue_seen[@]}"
-    CUE_NOW=1016; CUE_BODY='[]'
+    CUE_NOW=1120; CUE_BODY='[]'
     _patrol_poll_cues || true
     printf '__pruned=%s\n' "${#cue_seen[@]}"
   elif [[ "$mode" == cooldown ]]; then
@@ -307,6 +307,7 @@ cue_parse_probe() {
   local -x cam_discovery_json=${2:-}
   [[ -n "$cam_discovery_json" ]] || cam_discovery_json='{"presets":[{"slot":0},{"slot":4},{"slot":2}]}'
   local -ax presets=(0 4 2) cue_camera_ids=() cue_slots=() cue_types=() cue_holds=() cue_cooldowns=() cue_names=() cue_until=()
+  local -A cue_zone_labels=()
   local -x cue_query="" cue_pending=-1 cue_match=""
   local -A cue_seen=()
   _patrol_parse_cues
@@ -321,6 +322,7 @@ cue_empty_probe() {
   local -x cam_id=cam1 cam_name=Overwatch cam_config='{"cues":[{"camera_id":"fixed1","slot":4},{"camera_id":"fixed2","slot":2},{"camera_id":"fixed1","slot":2}]}'
   local -x cam_discovery_json='{"presets":[{"slot":0},{"slot":4},{"slot":2}]}'
   local -ax presets=(0 4 2) cue_camera_ids=() cue_slots=() cue_types=() cue_holds=() cue_cooldowns=() cue_names=() cue_until=()
+  local -A cue_zone_labels=()
   local -x cue_query="" cue_pending=-1 cue_match="" last_commanded_slot=0
   local -A cue_seen=()
   _patrol_parse_cues
@@ -358,7 +360,7 @@ cue_evolving_probe() {
   CUE_NOW=1006
   _patrol_poll_cues || true
   printf '__evolving_third=%s seen=%s\n' "$cue_pending" "${#cue_seen[@]}"
-  CUE_NOW=1016
+  CUE_NOW=1120
   CUE_BODY='[]'
   _patrol_poll_cues || true
   printf '__evolving_pruned=%s\n' "${#cue_seen[@]}"

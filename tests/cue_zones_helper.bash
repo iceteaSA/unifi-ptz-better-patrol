@@ -24,7 +24,7 @@ zone_probe() {
   local -a presets=(0 4 2) cue_camera_ids=() cue_slots=() cue_types=() cue_holds=() cue_cooldowns=() cue_names=() cue_until=() cue_zones=()
   local cue_query="" cue_pending=-1 cue_match="" last_commanded_slot=0
   local -x cue_matched_at=0 cue_poll_failed=0
-  local -A cue_seen=()
+  local -A cue_seen=() cue_zone_labels=()
   ZONE_REQUESTS_FILE="$BATS_TEST_TMPDIR/zone-requests"
   : > "$ZONE_REQUESTS_FILE"
   CUE_BODY=$(cue_fixture)
