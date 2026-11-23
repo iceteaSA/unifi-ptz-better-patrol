@@ -20,6 +20,10 @@ if (( auth )); then
     printf 'HTTP/1.1 401 Unauthorized\r\nSet-Cookie: sample-cookie-private\r\n\r\n' > "$headers"
     printf '{"error":"sample-reply-private"}'; exit 0
   fi
+  if [[ "$AUTH_MODE" == rate-limited ]]; then
+    printf 'HTTP/1.1 429 Too Many Requests\r\nSet-Cookie: sample-cookie-private\r\n\r\n' > "$headers"
+    printf '{"error":"sample-reply-private"}'; exit 0
+  fi
   if [[ "$AUTH_MODE" == transfer ]]; then exit 28; fi
   if [[ "$AUTH_MODE" == empty ]]; then exit 0; fi
   if [[ "$AUTH_MODE" == malformed ]]; then

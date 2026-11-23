@@ -72,6 +72,14 @@ setup() { auth_prepare; }
   [[ "$output" != *'(HTTP '* ]]
 }
 
+@test "rate-limited login identifies HTTP 429 and clears the old session" {
+  run auth_probe rate-limited
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'Auth failed — login rate-limited (HTTP 429)'* ]]
+  [[ "$output" == *'__failure-cleared'* ]]
+  [[ "$output" != *'no device token'* && "$output" != *'sample-reply-private'* && "$output" != *'sample-cookie-private'* ]]
+}
+
 @test "malformed login reports missing token without leaking parser input" {
   run auth_probe malformed
   [ "$status" -eq 0 ]

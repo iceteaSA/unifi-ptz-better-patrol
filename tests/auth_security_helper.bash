@@ -92,7 +92,7 @@ auth_probe() {
       [[ "$(< "$path")" == $'TOKEN: sample-session-two\nX-CSRF-Token: sample-csrf-two' ]] || return 1
       printf '__rewritten\n'
       ;;
-    failure|empty|transfer|no-csrf|malformed)
+    failure|rate-limited|empty|transfer|no-csrf|malformed)
       AUTH_MODE=$mode
       local rc=0
       api_auth || rc=$?
