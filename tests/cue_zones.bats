@@ -37,6 +37,24 @@ setup() {
   assert_not_contains "$output" 'Cue: Fixed One'
 }
 
+@test "a zone value that is not an object is ignored without failing the poll" {
+  run zone_probe '[{"camera_id":"fixed1","slot":4,"zones":[2]}]' scalar-zone
+  [ "$status" -eq 0 ]
+  assert_contains "$output" 'Cue: Fixed One person'
+  assert_not_contains "$output" 'Cue poll failed'
+  run zone_probe '[{"camera_id":"fixed1","slot":4,"zones":[1]}]' scalar-zone
+  [ "$status" -eq 0 ]
+  assert_not_contains "$output" 'Cue: Fixed One'
+  assert_not_contains "$output" 'Cue poll failed'
+}
+
+@test "zone status none gives no cue and leaves the event unseen" {
+  run zone_probe '[{"camera_id":"fixed1","slot":4,"zones":[2]}]' none
+  [ "$status" -eq 0 ]
+  assert_contains "$output" '__first=-1 seen=0 warnings=0'
+  assert_not_contains "$output" 'Cue: Fixed One'
+}
+
 @test "same event entering a cue zone later fires exactly once" {
   run zone_probe '[{"camera_id":"fixed1","slot":4,"zones":[2],"cooldown_seconds":0}]' later
   [ "$status" -eq 0 ]
@@ -50,7 +68,7 @@ setup() {
   [ "$status" -eq 0 ]
   assert_contains "$output" 'Cue zone "Missing" not found on Fixed One — ignoring this cue entry'
   assert_contains "$output" '__entries=1'
-  assert_contains "$output" 'Cue: Fixed One person → slot 4'
+  assert_contains "$output" 'Cue: Fixed One person (Trail mouth) → slot 4'
   assert_contains "$output" '__first=0 seen=1 warnings=1'
   assert_contains "$output" '__requests=/cameras/fixed1 /events?'
 }
@@ -68,7 +86,7 @@ setup() {
   run zone_probe '[{"camera_id":"fixed1","slot":4,"zones":[2],"types":["person"]}]' two-zones
   [ "$status" -eq 0 ]
   assert_contains "$output" '__first=0 seen=1 warnings=0'
-  assert_contains "$output" 'Cue: Fixed One person → slot 4'
+  assert_contains "$output" 'Cue: Fixed One person (Trail mouth) → slot 4'
 }
 
 @test "failed source read drops named zones but leaves numeric zones usable" {

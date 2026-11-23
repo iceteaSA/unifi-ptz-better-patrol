@@ -82,7 +82,9 @@ camera, and a missing, `null` or `true` value patrols it.
 
 `curl_failure.bats` checks stale and truncated bodies after curl transfer errors. It checks the unreadable activity cause, not only the active exit code.
 
-`cues.bats` checks cue validation, event polling, UUID deduplication, arbitration, resume order, acquisition, status, and the disabled path.
+`cues.bats` checks cue validation, event polling, per-entry event deduplication, arbitration, resume order, acquisition, status, and the disabled path.
+
+`cue_zones.bats` checks zone resolution, status `none`, and zone filters. `cue_reacquire.bats` checks lost-track cues, activity gates, current zone presence, config-order ties, per-entry seen state, cooldown, zone log names, and the 120-second window.
 
 `fixtures/cue-events.json` contains the complete person and animal event objects from the supplied Protect 7.3.74 sample. The event ids are different UUIDs in the same shape as the sample. Tests change the top-level camera, start, and end fields for each scenario. Nested `labels` and `params` keep the sample values. The event filter reads only the top-level camera and ignores end.
 

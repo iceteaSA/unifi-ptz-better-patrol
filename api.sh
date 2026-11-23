@@ -200,7 +200,11 @@ api_auth() {
       if [[ "$protocol" == HTTP/* && "$header_code" =~ ^[0-9]{3}$ ]]; then login_http=$header_code; fi
     done < "$_HEADERS_TEMP"
     [[ -z "$login_http" ]] || http_info=" (HTTP $login_http)"
-    log "api" "error" "Auth failed — no device token in login reply$http_info"
+    if [[ "$login_http" == 429 ]]; then
+      log "api" "error" "Auth failed — login rate-limited (HTTP 429)"
+    else
+      log "api" "error" "Auth failed — no device token in login reply$http_info"
+    fi
     return 1
   fi
   _CSRF_TOKEN=$(grep -i 'x-csrf-token:' "$_HEADERS_TEMP" | awk '{print $2}' | tr -d '\r') || true

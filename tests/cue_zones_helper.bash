@@ -24,15 +24,17 @@ zone_probe() {
   local -a presets=(0 4 2) cue_camera_ids=() cue_slots=() cue_types=() cue_holds=() cue_cooldowns=() cue_names=() cue_until=() cue_zones=()
   local cue_query="" cue_pending=-1 cue_match="" last_commanded_slot=0
   local -x cue_matched_at=0 cue_poll_failed=0
-  local -A cue_seen=()
+  local -A cue_seen=() cue_zone_labels=()
   ZONE_REQUESTS_FILE="$BATS_TEST_TMPDIR/zone-requests"
   : > "$ZONE_REQUESTS_FILE"
   CUE_BODY=$(cue_fixture)
   CUE_BODY=$(command jq -c '.[0:1] | .[0].metadata.zonesStatus={"2":{"level":84,"status":"leave"}} | .[0].smartDetectTypes=["animal","person"]' <<< "$CUE_BODY")
   case "${2:-}" in
+    none) CUE_BODY=$(command jq -c '.[0].metadata.zonesStatus={"2":{"level":0,"status":"none"},"4294967295":{"level":0,"status":"none"}}' <<< "$CUE_BODY") ;;
     other|later) CUE_BODY=$(command jq -c '.[0].metadata.zonesStatus={"1":{}}' <<< "$CUE_BODY") ;;
     no-zones) CUE_BODY=$(command jq -c 'del(.[0].metadata.zonesStatus)' <<< "$CUE_BODY") ;;
     bad-zones) CUE_BODY=$(command jq -c '.[0].metadata.zonesStatus=["2"]' <<< "$CUE_BODY") ;;
+    scalar-zone) CUE_BODY=$(command jq -c '.[0].metadata.zonesStatus={"1":"leave","2":{"level":84,"status":"leave"}}' <<< "$CUE_BODY") ;;
     two-zones) CUE_BODY=$(command jq -c '.[0].metadata.zonesStatus={"1":{},"2":{}}' <<< "$CUE_BODY") ;;
     five) CUE_BODY=$(command jq -c '.[0].metadata.zonesStatus={"5":{}}' <<< "$CUE_BODY") ;;
   esac

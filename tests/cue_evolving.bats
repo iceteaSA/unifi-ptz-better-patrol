@@ -37,7 +37,7 @@ load cue_test_helper
   assert_contains "$output" 'Cue: One person → slot 4'
 }
 
-@test "seen fired-event ids are pruned when their start leaves the 15-second window" {
+@test "seen fired-event ids are pruned when their start leaves the 120-second window" {
   run cue_evolving_probe types
   [ "$status" -eq 0 ]
   assert_contains "$output" '__evolving_second=0 seen=1'
