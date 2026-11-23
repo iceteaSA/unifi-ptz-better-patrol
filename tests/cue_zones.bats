@@ -37,6 +37,17 @@ setup() {
   assert_not_contains "$output" 'Cue: Fixed One'
 }
 
+@test "a zone value that is not an object is ignored without failing the poll" {
+  run zone_probe '[{"camera_id":"fixed1","slot":4,"zones":[2]}]' scalar-zone
+  [ "$status" -eq 0 ]
+  assert_contains "$output" 'Cue: Fixed One person'
+  assert_not_contains "$output" 'Cue poll failed'
+  run zone_probe '[{"camera_id":"fixed1","slot":4,"zones":[1]}]' scalar-zone
+  [ "$status" -eq 0 ]
+  assert_not_contains "$output" 'Cue: Fixed One'
+  assert_not_contains "$output" 'Cue poll failed'
+}
+
 @test "zone status none gives no cue and leaves the event unseen" {
   run zone_probe '[{"camera_id":"fixed1","slot":4,"zones":[2]}]' none
   [ "$status" -eq 0 ]

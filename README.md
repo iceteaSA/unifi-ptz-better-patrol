@@ -218,7 +218,7 @@ This includes the poll that ends the hold. These checks use the usual poll inter
 
 Re-acquire checks read events that started in the last 120 seconds:
 
-- For an event older than 15 seconds, a configured zone must show `enter` or `moving`. This status means that the subject is in the zone now.
+- For an event older than 15 seconds, a configured zone must show `enter` or `moving`. Protect changes this status to `leave` 0-9 seconds after the subject leaves the zone.
 - Without a zone filter, any event zone with `enter` or `moving` is sufficient.
 - An event from the last 15 seconds can also match the normal zone rule.
 - A match with `enter` or `moving` has priority over a match with another status. Config order breaks ties.

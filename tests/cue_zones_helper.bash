@@ -34,6 +34,7 @@ zone_probe() {
     other|later) CUE_BODY=$(command jq -c '.[0].metadata.zonesStatus={"1":{}}' <<< "$CUE_BODY") ;;
     no-zones) CUE_BODY=$(command jq -c 'del(.[0].metadata.zonesStatus)' <<< "$CUE_BODY") ;;
     bad-zones) CUE_BODY=$(command jq -c '.[0].metadata.zonesStatus=["2"]' <<< "$CUE_BODY") ;;
+    scalar-zone) CUE_BODY=$(command jq -c '.[0].metadata.zonesStatus={"1":"leave","2":{"level":84,"status":"leave"}}' <<< "$CUE_BODY") ;;
     two-zones) CUE_BODY=$(command jq -c '.[0].metadata.zonesStatus={"1":{},"2":{}}' <<< "$CUE_BODY") ;;
     five) CUE_BODY=$(command jq -c '.[0].metadata.zonesStatus={"5":{}}' <<< "$CUE_BODY") ;;
   esac

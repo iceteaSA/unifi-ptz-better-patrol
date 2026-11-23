@@ -639,8 +639,9 @@ _patrol_poll_cues() {
         and (.start | floor) == .start and (.smartDetectTypes | type) == "array")
       | (.metadata.zonesStatus | if type == "object" then to_entries else [] end) as $zones
       | [(.id | tojson), (.camera | tojson), (.start | tostring),
-          ($zones | map(select(.value.status != "none") | .key) | tojson),
-          ($zones | map(select(.value.status == "enter" or .value.status == "moving") | .key) | tojson)]
+          ($zones | map(select((.value | type) == "object" and .value.status != "none") | .key) | tojson),
+          ($zones | map(select((.value | type) == "object"
+            and (.value.status == "enter" or .value.status == "moving")) | .key) | tojson)]
         + [.smartDetectTypes[] | select(type == "string" and length > 0) | tojson]
       | join("\t")
     ' <<< "$_LAST_BODY" 2>/dev/null) || poll_error=1
