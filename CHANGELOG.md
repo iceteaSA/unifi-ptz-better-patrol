@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.7.0](https://github.com/iceteaSA/unifi-ptz-better-patrol/compare/v1.6.1...v1.7.0) (2026-11-23)
+
+
+### Features
+
+* re-acquire a lost track from cue cameras ([7465bde](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/7465bdecb81b1976eed79d29267c4cdf1ab178df))
+* re-acquire a lost track from cue cameras ([f4ccdbf](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/f4ccdbf3dd77dc185008695c13c0571620b7d772))
+
+
+### Bug Fixes
+
+* ignore cue zones with status none ([a384572](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/a3845728ea3a84a100ced68b381de6f572b3e14e))
+* name rate-limited logins ([402004a](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/402004a5e786c263837bbf5ad5a723510d4b482c))
+* skip cue zone values that are not objects ([23fc16d](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/23fc16de62fa39533900243a66cac5d459c4b993))
+
+
+### Documentation
+
+* list the AI PTZ Industrial as a tested camera ([67068b1](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/67068b179bdb91e42f5ae779440f6a1fd13665b3))
+* list the AI PTZ Industrial as a tested camera ([0ae96fe](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/0ae96fe7c4191fe2054f8dec8df690541f1ee910))
+* list the re-acquire match rules ([86b174c](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/86b174cd98de05d1ec04f6db1bd1319cd14e49df))
+
 ## [1.6.1](https://github.com/iceteaSA/unifi-ptz-better-patrol/compare/v1.6.0...v1.6.1) (2026-11-19)
 
 
