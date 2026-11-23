@@ -30,6 +30,7 @@ zone_probe() {
   CUE_BODY=$(cue_fixture)
   CUE_BODY=$(command jq -c '.[0:1] | .[0].metadata.zonesStatus={"2":{"level":84,"status":"leave"}} | .[0].smartDetectTypes=["animal","person"]' <<< "$CUE_BODY")
   case "${2:-}" in
+    none) CUE_BODY=$(command jq -c '.[0].metadata.zonesStatus={"2":{"level":0,"status":"none"},"4294967295":{"level":0,"status":"none"}}' <<< "$CUE_BODY") ;;
     other|later) CUE_BODY=$(command jq -c '.[0].metadata.zonesStatus={"1":{}}' <<< "$CUE_BODY") ;;
     no-zones) CUE_BODY=$(command jq -c 'del(.[0].metadata.zonesStatus)' <<< "$CUE_BODY") ;;
     bad-zones) CUE_BODY=$(command jq -c '.[0].metadata.zonesStatus=["2"]' <<< "$CUE_BODY") ;;

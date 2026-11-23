@@ -37,6 +37,13 @@ setup() {
   assert_not_contains "$output" 'Cue: Fixed One'
 }
 
+@test "zone status none gives no cue and leaves the event unseen" {
+  run zone_probe '[{"camera_id":"fixed1","slot":4,"zones":[2]}]' none
+  [ "$status" -eq 0 ]
+  assert_contains "$output" '__first=-1 seen=0 warnings=0'
+  assert_not_contains "$output" 'Cue: Fixed One'
+}
+
 @test "same event entering a cue zone later fires exactly once" {
   run zone_probe '[{"camera_id":"fixed1","slot":4,"zones":[2],"cooldown_seconds":0}]' later
   [ "$status" -eq 0 ]
