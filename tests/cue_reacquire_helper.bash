@@ -74,6 +74,7 @@ reacquire_poll_probe() {
   local -a jq_calls=()
   mapfile -t jq_calls < "$REACQUIRE_COUNTS"
   printf '__match=%s rc=%s type=%s at=%s until=%s seen=%s jq=%s\n' "$cue_pending" "$rc" "$cue_match" "$cue_matched_at" "${cue_until[0]}" "${#cue_seen[@]}" "${#jq_calls[@]}"
+  printf '__no_goto=%s\n' "$cue_no_goto"
   if [[ "$mode" == entries ]]; then
     CUE_NOW=1001
     _patrol_poll_cues || true

@@ -107,10 +107,11 @@ load cue_test_helper
   assert_contains "$output" '__first=0 rc=0'
 }
 
-@test "cue for the current slot is skipped without cooldown" {
+@test "cue for the current slot is seen and starts its cooldown" {
   run cue_poll_probe current
   [ "$status" -eq 0 ]
-  assert_contains "$output" '__first=-1 rc=1 until=0'
+  assert_contains "$output" '__first=0 rc=0 until=1010 seen=1'
+  assert_contains "$output" 'Cue: One person → slot 4 (already there)'
 }
 
 @test "failed malformed and out-of-window event polls give no cue" {
@@ -171,13 +172,14 @@ load cue_test_helper
   assert_contains "$output" '__goto=-1 now=1039 idx=0'
 }
 
-@test "a cue during home dwell resumes at index zero" {
+@test "a home-dwell cue still sends its goto and resumes at index zero" {
   CUE_FIRE_SLOT=-1 CUE_FIRE_GOTO=4
   run cue_integration_probe '{"home_between_cycles":true,"dwell_seconds":6,"ptz_settle_seconds":0,"cues":[{"camera_id":"fixed1","slot":4,"hold_seconds":5}]}' integration 7
   [ "$status" -eq 0 ]
   assert_contains "$output" '__goto=-1 now=1018 idx=0'
   assert_contains "$output" '__goto=4 now=1020 idx=0'
   assert_contains "$output" '__goto=0 now=1025 idx=0'
+  assert_not_contains "$output" '(already there)'
 }
 
 @test "activity after a cue does not dynamically skip the selected repeat step" {

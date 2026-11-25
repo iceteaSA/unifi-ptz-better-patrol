@@ -29,5 +29,25 @@ load cue_arbitration_helper
   run arbitration_probe same
   [ "$status" -eq 0 ]
   assert_not_contains "$output" '__goto=4 now=1007'
+  assert_contains "$output" 'Cue: Water Tower person → slot 4 (already there)'
+  assert_contains "$output" '__goto=0 now=1012 cue=0 source= idx=0'
   assert_contains "$output" 'Cue hold ended'
+}
+
+@test "already-there cue holds without goto and preserves the motor settle clock" {
+  run arbitration_probe already
+  [ "$status" -eq 0 ]
+  assert_contains "$output" 'Cue: Horsetrail Up person (Past pole) → slot 0 (already there)'
+  assert_contains "$output" '__hold slot=0 source=Horsetrail Up seen=1 until=1012 last_goto=1000'
+  assert_contains "$output" '__status=cued source=Horsetrail Up slot=0'
+  assert_contains "$output" '__goto=4 now=1007 cue=0 source= idx=1'
+  assert_not_contains "$output" '__goto=0 now=1002'
+}
+
+@test "reacquire sends a goto even for the last commanded slot" {
+  run arbitration_probe reacquire-current
+  [ "$status" -eq 0 ]
+  assert_contains "$output" 'Tracking lost — Cue: Horsetrail Up person (Past pole) → slot 0'
+  assert_contains "$output" '__goto=0 now=1007 cue=1 source=Horsetrail Up idx=0'
+  assert_not_contains "$output" '(already there)'
 }

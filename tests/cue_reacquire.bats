@@ -90,9 +90,9 @@ load cue_reacquire_helper
   assert_contains "$output" '__match=0 rc=0 type=person at=1000 until=1120 seen=1 jq=1'
 }
 
-@test "reacquire respects cooldown current slot types and window limits" {
+@test "reacquire respects cooldown types and window limits" {
   local mode
-  for mode in cooldown current types stale future; do
+  for mode in cooldown types stale future; do
     run reacquire_poll_probe "$mode"
     [ "$status" -eq 0 ]
     if [[ "$mode" == cooldown ]]; then
@@ -109,6 +109,14 @@ load cue_reacquire_helper
   [ "$status" -eq 0 ]
   assert_contains "$output" 'Cue poll failed'
   assert_contains "$output" '__match=-1 rc=1 type= at=0 until=0 seen=0 jq=1'
+}
+
+@test "reacquire accepts the commanded slot but still requires a goto" {
+  run reacquire_poll_probe current
+  [ "$status" -eq 0 ]
+  assert_contains "$output" '__match=0 rc=0 type=person at=1000 until=1010 seen=1 jq=1'
+  assert_contains "$output" '__no_goto=0'
+  assert_not_contains "$output" '(already there)'
 }
 
 @test "lost track interrupts motion hold through the existing cued and resume path" {

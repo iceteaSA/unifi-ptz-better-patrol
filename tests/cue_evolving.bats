@@ -29,12 +29,12 @@ load cue_test_helper
   assert_contains "$output" '__evolving_third=-1 seen=1'
 }
 
-@test "same event at the current slot stays eligible after the PTZ moves" {
+@test "same event accepted at the current slot stays seen after the PTZ moves" {
   run cue_evolving_probe current
   [ "$status" -eq 0 ]
-  assert_contains "$output" '__evolving_first=-1 seen=0'
-  assert_contains "$output" '__evolving_second=0 seen=1'
-  assert_contains "$output" 'Cue: One person → slot 4'
+  assert_contains "$output" '__evolving_first=0 seen=1'
+  assert_contains "$output" '__evolving_second=-1 seen=1'
+  assert_contains "$output" 'Cue: One person → slot 4 (already there)'
 }
 
 @test "seen fired-event ids are pruned when their start leaves the 120-second window" {

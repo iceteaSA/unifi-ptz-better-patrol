@@ -214,7 +214,11 @@ Zone ids stay usable if the startup camera read fails. Zone names do not. If the
 
 The cue log names the matched zone, for example `Cue: Path Cam person (Far side) → slot 0`. If no name is known, it shows the zone id. An entry without zones keeps the log without a zone name.
 
-Patrol checks cues at preset, home, and cue dwell polls, after activity and manual-control checks. Normal cue checks stop during activity, tracking, manual holds, schedule pauses, and unreadable camera state. Current zone presence wins, then config order. A cue for the current slot is skipped. Each entry has its own cooldown, which starts when that entry fires.
+Patrol checks cues at preset, home, and cue dwell polls, after activity and manual-control checks. Normal cue checks stop during activity, tracking, manual holds, schedule pauses, and unreadable camera state. Current zone presence wins, then config order. Each entry has its own cooldown, which starts when that entry fires.
+
+A cue for the current commanded slot logs `(already there)` and starts a cue hold without a goto. It marks the event seen and starts the entry's cooldown. During a cue hold at that slot, it starts the hold timer again with the new entry's `hold_seconds`. Re-acquire cues still send a goto because tracking moved the camera. Home dwell has no commanded preset slot, so a home-dwell cue also sends a goto.
+
+The entry's cooldown limits these timer restarts. With the default 120 seconds, an entry can restart a hold at most once in 120 seconds. With `cooldown_seconds: 0`, new events from the source can keep the slot on hold. The same event cannot restart that entry's hold again.
 
 A cue for a different slot ends a cue hold early. Its log adds `(pre-empts <previous cue name>)`. The status stays `cued`, with the new source in `cue_camera`. After the last cue hold, patrol resumes the path step selected before the first cue. A new cue does not apply the half-dwell rule again to that step.
 
@@ -243,7 +247,7 @@ Before the cue goto, patrol checks the time since the cue match. After more than
 
 An event can become available while cue checks are off. It can fire when checks start again within the 120-second start window, if its zone status matches the rules above. Protect lists new events about 3 seconds after their start. Patrol ignores the event's `end` field: a null value does not prove that the subject is present.
 
-Each cue entry can fire only once per event. Another entry can fire on the same event later, for example when the subject moves to another zone. Patrol reads event types and zone status again at each poll. This also applies when an entry is in cooldown or uses the PTZ's current slot. Fired entries stay in the seen map until their event start is older than 120 seconds.
+Each cue entry can fire only once per event. Another entry can fire on the same event later, for example when the subject moves to another zone. Patrol reads event types and zone status again at each poll. This also applies when an entry is in cooldown. Fired entries stay in the seen map until their event start is older than 120 seconds.
 
 Missing or empty `cues` adds no poll or goto processes and no HTTP requests. An empty event poll starts one curl and no jq. An event request error gives no cue and does not stop patrol.
 

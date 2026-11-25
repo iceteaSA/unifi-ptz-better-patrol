@@ -111,6 +111,7 @@ discover.sh   -> api.sh
 - Match `enter` or `moving` in a configured zone, or any zone for an unfiltered entry. Also accept events from the last 15 seconds under the status-other-than-`none` rule. Prefer current presence, then config order.
 - Keep cue seen state per entry and event, and prune it after the 120-second event-start window. Keep cooldown per entry. Use the existing cue goto and resume path after a re-acquire hit.
 - Poll cues during cue holds with the usual activity, readability, and drift gates. On pre-emption, keep the selected resume step and the `cued` status until the last cue hold ends.
+- Accept a normal cue for `last_commanded_slot` without a goto. Mark it seen, start its cooldown, and restart its cue hold. Keep the motor settle clock. Send gotos for re-acquire and home-dwell cues.
 
 ## Behavioral invariants
 

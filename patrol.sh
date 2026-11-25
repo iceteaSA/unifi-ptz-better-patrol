@@ -617,6 +617,7 @@ _patrol_poll_cues() {
   local now cutoff recent_cutoff id src start zones now_zones types rows i j etype zone_id zone_match priority matched_zone key
   local poll_error=0
   local -a event_cameras=() event_types=() event_ids=() event_starts=() event_zones=() event_now_zones=() tokens=() zone_tokens=()
+  cue_no_goto=0
   (( reacquire )) || cue_pending=-1
   [[ -n "${cue_query:-}" ]] || return 1
   printf -v now '%(%s)T' -1
@@ -675,7 +676,6 @@ _patrol_poll_cues() {
   for (( priority=1; priority>=0; priority-- )); do
   for (( i=0; i<${#cue_slots[@]}; i++ )); do
     (( now >= cue_until[i] )) || continue
-    [[ "${cue_slots[$i]}" != "$last_commanded_slot" ]] || continue
     for (( j=0; j<${#event_cameras[@]}; j++ )); do
       [[ "${event_cameras[$j]}" == "\"${cue_camera_ids[$i]}\"" ]] || continue
       key="$i:${event_ids[$j]}"
@@ -708,10 +708,15 @@ _patrol_poll_cues() {
           cue_match=${etype:1:${#etype}-2}
           cue_matched_at=$now
           cue_until[i]=$(( now + cue_cooldowns[i] ))
+          if (( reacquire == 0 )) && [[ "${cue_slots[$i]}" == "$last_commanded_slot" ]]; then
+            cue_no_goto=1
+          fi
           local prefix=""
           (( reacquire == 0 )) || prefix="Tracking lost — "
           local suffix=""
-          if (( ${cue_in_progress:-0} )) && [[ "${cue_slots[$i]}" != "${cue_slot:--1}" ]]; then
+          if (( cue_no_goto )); then
+            suffix=" (already there)"
+          elif (( ${cue_in_progress:-0} )) && [[ "${cue_slots[$i]}" != "${cue_slot:--1}" ]]; then
             suffix=" (pre-empts $status_cue_camera)"
           fi
           log "$cam_name" "info" "${prefix}Cue: ${cue_names[$i]} $cue_match$matched_zone → slot ${cue_slots[$i]}$suffix"
@@ -1199,7 +1204,7 @@ patrol_camera() {
   local -A cue_zone_labels=()
   local -A cue_seen=()
   local cue_query="" cue_pending=-1 cue_match="" cue_in_progress=0 cue_resume=0 cue_hold=0
-  local cue_matched_at=0 cue_poll_failed=0
+  local cue_matched_at=0 cue_poll_failed=0 cue_no_goto=0
   # Failed-goto exhaustion clears last_commanded_slot. Retain the cue target.
   local cue_slot=-1
   _patrol_parse_cues
@@ -1298,6 +1303,7 @@ patrol_camera() {
           tracking_enabled=0
         fi
         schedule_paused=1
+        cue_no_goto=0
         expected_pan=-1; expected_tilt=-1; expected_zoom=-1
         acquisition_state="acquiring"
         acquisition_streak=0
@@ -1369,6 +1375,7 @@ patrol_camera() {
       acquisition_state="acquiring"
       acquisition_streak=0
       external_control_until=0
+      cue_no_goto=0
       top_drift_attempts=0
       top_drift_streak=0
       top_previous_drift=0
@@ -1407,6 +1414,7 @@ patrol_camera() {
     fi
     _patrol_refresh_camera_name
     if (( _LAST_TRACKING_ACTIVE == 1 )); then
+      cue_no_goto=0
       expected_pan=-1; expected_tilt=-1; expected_zoom=-1
       acquisition_state="acquiring"
       acquisition_streak=0
@@ -1611,8 +1619,12 @@ patrol_camera() {
       startup_settle_pending=0
     fi
     local code
-    api_post_with_retry "/cameras/$cam_id/ptz/goto/$slot" 2 3 >/dev/null || true
-    code="$_LAST_HTTP_CODE"
+    if (( cue_in_progress && cue_no_goto )); then
+      code=200
+    else
+      api_post_with_retry "/cameras/$cam_id/ptz/goto/$slot" 2 3 >/dev/null || true
+      code="$_LAST_HTTP_CODE"
+    fi
 
     case "$code" in
       200|204)
@@ -1628,20 +1640,25 @@ patrol_camera() {
         poll_interval_s=$(( slot_dwell / 3 ))
         (( poll_interval_s > 5 )) && poll_interval_s=5
         (( poll_interval_s < 2 )) && poll_interval_s=2
-        last_goto_ts=$(date +%s)
-        acquisition_state="acquiring"
-        acquisition_streak=0
+        if (( cue_no_goto == 0 )); then
+          last_goto_ts=$(date +%s)
+          acquisition_state="acquiring"
+          acquisition_streak=0
+        fi
         top_drift_attempts=0
         top_drift_streak=0
         top_previous_drift=0
         # Set expected position from preset data.  is_externally_controlled()
         # compares these against the live /ptz/position (motor steps), so the
         # coordinate system matches directly — no ISP zoom scaling needed.
-        IFS=$'\t' read -r expected_pan expected_tilt expected_zoom <<< "$(get_preset_ptz "$preset_positions" "$slot")"
+        if (( cue_no_goto == 0 )); then
+          IFS=$'\t' read -r expected_pan expected_tilt expected_zoom <<< "$(get_preset_ptz "$preset_positions" "$slot")"
+          goto_retry_count=0
+          log "$cam_name" "info" "→ Slot $slot [HTTP $code]"
+        fi
         last_commanded_slot=$slot
         status_slot=$slot
-        goto_retry_count=0
-        log "$cam_name" "info" "→ Slot $slot [HTTP $code]"
+        cue_no_goto=0
         (( cue_in_progress == 0 )) || _patrol_status_tick cued
         ;;
       404)

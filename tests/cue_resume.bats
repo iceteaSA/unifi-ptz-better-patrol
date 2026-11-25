@@ -82,14 +82,15 @@ load cue_test_helper
   assert_contains "$output" '__goto=4 now=1070 idx=3'
 }
 
-@test "current-slot cue rejection and short-look repeat keep the combined order" {
+@test "already-there cue and pre-emption keep the original short-look resume step" {
   CUE_FIRE_ELAPSED=5
   run cue_integration_probe '{"dwell_seconds":20,"ptz_settle_seconds":0,"cues":[{"camera_id":"fixed1","slot":0,"hold_seconds":5},{"camera_id":"fixed1","slot":4,"hold_seconds":5}]}' integration 4
   [ "$status" -eq 0 ]
-  assert_contains "$output" 'Cue: Fixed One person → slot 4'
-  assert_contains "$output" '__goto=4 now=1005 idx=0'
-  assert_contains "$output" '__goto=0 now=1010 idx=0'
-  assert_contains "$output" '__goto=4 now=1030 idx=1'
+  assert_contains "$output" 'Cue: Fixed One person → slot 0 (already there)'
+  assert_contains "$output" 'Cue: Fixed One person → slot 4 (pre-empts Fixed One)'
+  assert_contains "$output" '__goto=4 now=1007 idx=0'
+  assert_contains "$output" '__goto=0 now=1012 idx=0'
+  assert_contains "$output" '__goto=4 now=1032 idx=1'
   assert_not_contains "$output" 'Skipping slot'
 }
 
