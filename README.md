@@ -174,7 +174,7 @@ Protect can send the camera to its HomeView after auto-tracking. For each drift 
 
 Before a failed-goto retry, patrol checks this PTZ's smart events that started in the last 120 seconds. An open event, or one that ended in the last 10 seconds, holds patrol instead of pulling the camera off its subject. All event types count, including face-only events with no active zone. The status is `holding_activity`. Patrol checks again at each poll and limits the hold with `max_smart_wait` (`0` has no limit).
 
-Patrol logs `Goto target not acquired — own smart event (<types>) open; holding instead of re-issuing` once for the hold. When the event clears or the hold reaches its limit, the usual bounded goto retries continue. An event request or parse error logs one warning and keeps the previous retry behaviour. Polls without a pending retry make no extra request.
+Patrol logs `Goto target not acquired — own smart event (<types>) open; holding instead of re-issuing` once for the hold. When the event clears or the hold reaches its limit, patrol checks the camera position again at the next poll. A retry follows only if the camera is still away from its target. The events API filters on event start, so an own event that started more than 120 seconds ago no longer holds patrol. An event request or parse error logs one warning and keeps the previous retry behaviour. Polls without a pending retry make no extra request.
 
 Patrol then skips the manual-control hold and stops position checks until the next goto. If patrol cannot read HomeView, or its data is invalid, the usual drift rules apply. Patrol also skips this hold when you push Home in the Protect app: it counts as camera-initiated movement.
 

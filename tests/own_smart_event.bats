@@ -78,7 +78,7 @@ load own_smart_event_helper
   [ "$status" -eq 0 ]
   assert_contains "$output" '__status=holding_activity source=null slot=0'
   assert_contains "$output" 'Max smart wait (6s) hit on own smart event'
-  assert_contains "$output" '__goto=0 now=1008 own_requests=4 retries=1'
+  assert_contains "$output" '__goto=0 now=1010 own_requests=5 retries=1'
   assert_not_contains "$output" '__goto=4'
 }
 
@@ -87,8 +87,16 @@ load own_smart_event_helper
   [ "$status" -eq 0 ]
   assert_contains "$output" '__own_request now=1006'
   assert_contains "$output" '__status=holding_activity source=null slot=0'
-  assert_contains "$output" '__goto=0 now=1016 own_requests=3 retries=1'
+  assert_contains "$output" '__goto=0 now=1016 own_requests=4 retries=1'
   assert_not_contains "$output" '__goto=4'
+}
+
+@test "after an own-event hold the position is checked again before any retry" {
+  run own_patrol_probe returned
+  [ "$status" -eq 0 ]
+  assert_contains "$output" 'holding instead of re-issuing'
+  assert_contains "$output" '__goto=4'
+  assert_not_contains "$output" 'retries=1'
 }
 
 @test "no own event and own request errors re-issue the goto as before" {
@@ -105,7 +113,7 @@ load own_smart_event_helper
 @test "uncapped own event hold keeps webhook heartbeats until the event clears" {
   run own_patrol_probe unlimited
   [ "$status" -eq 0 ]
-  assert_contains "$output" '__goto=0 now=1072 own_requests=36 retries=1'
+  assert_contains "$output" '__goto=0 now=1074 own_requests=37 retries=1'
   assert_not_contains "$output" 'Max smart wait'
   local needle='__status=holding_activity source=null slot=0' without
   without=${output//"$needle"/}

@@ -211,8 +211,10 @@ _patrol_wait_for_camera_settle() {
 # Some firmware omits tracking flags for the PTZ's own smart events.
 # Wait here so neither failed-goto caller can advance during that activity.
 # Episode state uses caller scope and survives retries until an empty poll.
+# Returns 1 after a hold: the position is stale, so the caller checks it again
+# before any retry.
 _patrol_hold_own_smart_event() {
-  local poll_iv=${1:-5} now types poll_error
+  local poll_iv=${1:-5} now types poll_error held=0
   while true; do
     printf -v now '%(%s)T' -1
     types=""; poll_error=0
@@ -236,13 +238,13 @@ _patrol_hold_own_smart_event() {
         log "$cam_name" "warn" "Own smart event check failed (HTTP $_LAST_HTTP_CODE, curl rc $_LAST_CURL_RC) — keeping goto retry behaviour"
       fi
       own_event_poll_failed=1
-      return 0
+      return "$held"
     fi
     own_event_poll_failed=0
     if [[ -z "$types" ]]; then
       own_event_since=0
       own_event_capped=0
-      return 0
+      return "$held"
     fi
     printf -v now '%(%s)T' -1
     if (( own_event_since == 0 )); then
@@ -254,8 +256,9 @@ _patrol_hold_own_smart_event() {
         log "$cam_name" "warn" "Max smart wait (${max_smart_wait}s) hit on own smart event — resuming goto retries"
       fi
       own_event_capped=1
-      return 0
+      return "$held"
     fi
+    held=1
     _patrol_status_tick holding_activity "$now"
     sleep "$poll_iv"
     api_ensure_auth
@@ -1576,7 +1579,10 @@ patrol_camera() {
         top_previous_drift=0
         # A pending cue replaces the old target. A completed cue must not restart.
         if (( last_commanded_slot >= 0 && cue_pending < 0 && cue_resume == 0 )); then
-          _patrol_hold_own_smart_event 5
+          # After a hold, check the position again before any retry.
+          if ! _patrol_hold_own_smart_event 5; then
+            continue
+          fi
           if _patrol_reissue_failed_goto "$cam_id" "$cam_name" "$last_commanded_slot" "$goto_retry_limit"; then
             sleep 5
             continue
@@ -1902,7 +1908,10 @@ patrol_camera() {
           dwell_drift_attempts=0
           dwell_drift_streak=0
           dwell_previous_drift=0
-          _patrol_hold_own_smart_event "$poll_interval_s"
+          # After a hold, check the position again before any retry.
+          if ! _patrol_hold_own_smart_event "$poll_interval_s"; then
+            continue
+          fi
           if _patrol_reissue_failed_goto "$cam_id" "$cam_name" "$slot" "$goto_retry_limit"; then
             continue
           fi

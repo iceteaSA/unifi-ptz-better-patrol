@@ -46,6 +46,7 @@ load cue_arbitration_helper
 
 @test "a dropped already-there cue does not suppress the next goto bookkeeping" {
   run arbitration_probe already-drop
+  [ "$status" -eq 0 ]
   assert_contains "$output" '(already there)'
   assert_contains "$output" 'Cue dropped'
   local after=${output#*Cue dropped}

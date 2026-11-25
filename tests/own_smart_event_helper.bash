@@ -18,7 +18,7 @@ api_get() {
     error) _LAST_HTTP_CODE=503 ;;
     malformed) _LAST_BODY='' ;;
     documents) _LAST_BODY+=$'\n[]' ;;
-    open|face|dwell|top|long) if (( CUE_NOW >= 1012 )); then _LAST_BODY='[]'; fi ;;
+    open|face|dwell|top|long|returned) if (( CUE_NOW >= 1012 )); then _LAST_BODY='[]'; fi ;;
     unlimited) if (( CUE_NOW >= 1072 )); then _LAST_BODY='[]'; fi ;;
   esac
   # Protect filters on event start, so an event older than the window drops out.
@@ -60,11 +60,13 @@ own_check_probe() {
   local own_event_since=0 own_event_poll_failed=0 own_event_capped=0
   own_prepare "$1"
   [[ "$1" != capped ]] || max_smart_wait=4
-  _patrol_hold_own_smart_event 2
-  if [[ "$1" == error || "$1" == capped ]]; then _patrol_hold_own_smart_event 2; fi
+  local rc1=0 rc2=-
+  _patrol_hold_own_smart_event 2 || rc1=$?
+  if [[ "$1" == error || "$1" == capped ]]; then rc2=0; _patrol_hold_own_smart_event 2 || rc2=$?; fi
   local -a calls=()
   mapfile -t calls < "$OWN_COUNTS"
   printf '__own_done now=%s requests=%s jq=%s since=%s capped=%s failed=%s\n' "$CUE_NOW" "$OWN_REQUESTS" "${#calls[@]}" "$own_event_since" "$own_event_capped" "$own_event_poll_failed"
+  printf '__own_rc first=%s second=%s\n' "$rc1" "$rc2"
 }
 
 api_get_camera_state() {
@@ -77,7 +79,14 @@ api_get_preset_positions() {
   printf '[{"slot":0,"pan":7100,"tilt":10400,"zoom":97},{"slot":4,"pan":11600,"tilt":10400,"zoom":97}]'
 }
 
-api_get_ptz_position() { printf '8800\t10400\t97\n'; }
+api_get_ptz_position() {
+  # In returned mode the camera is back at slot 0 by the time the hold ends.
+  if [[ "$OWN_MODE" == returned ]] && (( FIELD_NOW >= 1004 )); then
+    printf '7100\t10400\t97\n'
+  else
+    printf '8800\t10400\t97\n'
+  fi
+}
 
 api_post_with_retry() {
   FIELD_GOTOS=$(( FIELD_GOTOS + 1 ))
