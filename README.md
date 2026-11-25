@@ -249,6 +249,8 @@ Patrol sends the cue goto one time. The usual bounded goto retries can send that
 
 Before the cue goto, patrol checks the time since the cue match. After more than 15 seconds, patrol drops the cue. This also applies after a schedule pause, manual hold, activity hold, or unreadable camera state. It logs `Cue dropped — <age>s old` and uses the path step selected by the half-dwell rule. Dynamic tracking does not skip that step.
 
+If a pre-empting cue expires before its goto, the previous cue hold also ends. Patrol clears its cue status and resumes the selected path step. The previous hold cannot supply the dwell time or source name for that path step.
+
 An event can become available while cue checks are off. It can fire when checks start again within the 120-second start window, if its zone status matches the rules above. Protect lists new events about 3 seconds after their start. Patrol ignores the event's `end` field: a null value does not prove that the subject is present.
 
 Each cue entry can fire only once per event. Another entry can fire on the same event later, for example when the subject moves to another zone. Patrol reads event types and zone status again at each poll. This also applies when an entry is in cooldown. Fired entries stay in the seen map until their event start is older than 120 seconds.

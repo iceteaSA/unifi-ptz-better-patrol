@@ -663,6 +663,19 @@ _patrol_parse_cues() {
   return 0
 }
 
+# Cue completion and pending-cue expiry must clear the same caller-scope state.
+_patrol_end_cue_hold() {
+  cue_in_progress=0
+  status_idle_state=patrolling
+  status_cue_camera=""
+  log "$cam_name" "info" "Cue hold ended"
+  if [[ "${presets[$idx]}" == "$cue_slot" ]]; then
+    log "$cam_name" "debug" "Skipping slot $cue_slot — the cue just held it"
+    idx=$(( (idx + 1) % ${#presets[@]} ))
+    step_repeated=0
+  fi
+}
+
 # The two priority passes can reject a pair before the other pass accepts it.
 # Emit only the final reason, not an intermediate priority rejection.
 _patrol_log_cue_skips() {
@@ -1368,15 +1381,7 @@ patrol_camera() {
 
   while true; do
     if (( cue_in_progress && cue_pending < 0 )); then
-      cue_in_progress=0
-      status_idle_state=patrolling
-      status_cue_camera=""
-      log "$cam_name" "info" "Cue hold ended"
-      if [[ "${presets[$idx]}" == "$cue_slot" ]]; then
-        log "$cam_name" "debug" "Skipping slot $cue_slot — the cue just held it"
-        idx=$(( (idx + 1) % ${#presets[@]} ))
-        step_repeated=0
-      fi
+      _patrol_end_cue_hold
     fi
     api_ensure_auth
 
@@ -1675,6 +1680,10 @@ patrol_camera() {
         cue_pending=-1
         cue_resume=1
         log "$cam_name" "info" "Cue dropped — ${cue_age}s old"
+        if (( cue_in_progress )); then
+          _patrol_end_cue_hold
+          slot=${presets[$idx]}
+        fi
       fi
     fi
     # Dynamic auto-tracking: tracking may have moved the camera, so reset

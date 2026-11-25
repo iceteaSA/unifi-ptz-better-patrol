@@ -6,6 +6,7 @@ source "$BATS_TEST_DIRNAME/cue_reacquire_helper.bash"
 ARB_MODE=preempt
 ARB_FIRST='[]'
 ARB_SECOND='[]'
+ARB_DELAYED=0
 
 api_get() {
   _LAST_HTTP_CODE=200
@@ -51,6 +52,13 @@ api_post_with_retry() {
   _LAST_HTTP_CODE=200
 }
 
+api_ensure_auth() {
+  if [[ "$ARB_MODE" == expiry ]] && (( cue_pending >= 0 && cue_in_progress && ARB_DELAYED == 0 )); then
+    external_control_until=$(( FIELD_NOW + 20 ))
+    ARB_DELAYED=1
+  fi
+}
+
 arbitration_probe() {
   ARB_MODE=$1
   ARB_FIRST=$(reacquire_fixture 1000000)
@@ -62,7 +70,7 @@ arbitration_probe() {
     ARB_SECOND='[]'
     [[ "$ARB_MODE" != reacquire-current ]] || ARB_SECOND=$ARB_FIRST
   fi
-  FIELD_GOTOS=0 FIELD_NOW=1000 CUE_NOW=1000
+  FIELD_GOTOS=0 FIELD_NOW=1000 CUE_NOW=1000 ARB_DELAYED=0
   _STATUS_WEBHOOK_URL='https://example.invalid/webhook'
   patrol_camera cam1 Overwatch "$FIELD_DISCOVERY"
 }

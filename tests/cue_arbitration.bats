@@ -51,3 +51,14 @@ load cue_arbitration_helper
   assert_contains "$output" '__goto=0 now=1007 cue=1 source=Horsetrail Up idx=0'
   assert_not_contains "$output" '(already there)'
 }
+
+@test "an expired pre-empting cue clears the previous hold before patrol resumes" {
+  run arbitration_probe expiry
+  [ "$status" -eq 0 ]
+  assert_contains "$output" 'Cue: Water Tower person → slot 2 (pre-empts Horsetrail Up)'
+  assert_contains "$output" 'Cue dropped — 20s old'
+  assert_contains "$output" 'Cue hold ended'
+  assert_contains "$output" '__goto=0 now=1027 cue=0 source= idx=0'
+  assert_contains "$output" '__status=patrolling source=null slot=0'
+  assert_not_contains "$output" '__goto=2'
+}
