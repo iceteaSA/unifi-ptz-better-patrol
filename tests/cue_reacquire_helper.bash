@@ -46,7 +46,8 @@ reacquire_poll_probe() {
   CUE_BODY=$(reacquire_fixture)
   case "$mode" in
     entries) reacquire=0; CUE_BODY=$(reacquire_fixture 999000); cam_config=${cam_config//10/0} ;;
-    normal-old) reacquire=0 ;;
+    normal-old) reacquire=0; CUE_BODY=$(reacquire_fixture 982000); CUE_BODY=$(command jq -c '.[0].metadata.zonesStatus["2"].status="leave" | .[0].metadata.zonesStatus["3"].status="enter"' <<< "$CUE_BODY") ;;
+    normal-leave) reacquire=0; CUE_BODY=$(command jq -c '.[0].metadata.zonesStatus["2"].status="leave"' <<< "$CUE_BODY") ;;
     leave) CUE_BODY=$(command jq -c '.[0].metadata.zonesStatus["2"].status="leave"' <<< "$CUE_BODY") ;;
     moving) CUE_BODY=$(command jq -c '.[0].metadata.zonesStatus["2"].status="moving"' <<< "$CUE_BODY") ;;
     recent-leave) CUE_BODY=$(reacquire_fixture 999000); CUE_BODY=$(command jq -c '.[0].metadata.zonesStatus["2"].status="leave"' <<< "$CUE_BODY") ;;

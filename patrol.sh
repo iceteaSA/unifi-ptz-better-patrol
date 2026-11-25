@@ -625,7 +625,6 @@ _patrol_poll_cues() {
     start=${cue_seen[$id]}
     if (( start < cutoff )); then unset 'cue_seen[$id]'; fi
   done
-  (( reacquire )) || cutoff=$(( (now - 15) * 1000 ))
   api_get "/events?start=$cutoff&end=$(( now * 1000 ))&types=smartDetectZone$cue_query"
   if [[ "$_LAST_HTTP_CODE" != 200 ]]; then
     poll_error=1
@@ -660,8 +659,7 @@ _patrol_poll_cues() {
   [[ "$_LAST_BODY" != '[]' ]] || return 1
   printf -v now '%(%s)T' -1
   recent_cutoff=$(( (now - 15) * 1000 ))
-  cutoff=$recent_cutoff
-  (( reacquire == 0 )) || cutoff=$(( (now - 120) * 1000 ))
+  cutoff=$(( (now - 120) * 1000 ))
   while IFS=$'\t' read -r id src start zones now_zones types; do
     [[ -n "$id" && -n "$types" ]] || continue
     [[ "$start" =~ ^[0-9]+$ ]] || continue
@@ -674,7 +672,7 @@ _patrol_poll_cues() {
     event_now_zones+=("$now_zones")
   done <<< "$rows"
   # Current zone presence has priority over a recent event with another status.
-  for (( priority=reacquire; priority>=0; priority-- )); do
+  for (( priority=1; priority>=0; priority-- )); do
   for (( i=0; i<${#cue_slots[@]}; i++ )); do
     (( now >= cue_until[i] )) || continue
     [[ "${cue_slots[$i]}" != "$last_commanded_slot" ]] || continue

@@ -220,11 +220,11 @@ After a track is lost, cues can end the activity hold and re-acquire the subject
 
 This includes the poll that ends the hold. These checks use the usual poll interval, with no additional sleep. Holds that never had tracking do not check cues.
 
-Re-acquire checks read events that started in the last 120 seconds:
+Every cue poll reads events that started in the last 120 seconds:
 
 - For an event older than 15 seconds, a configured zone must show `enter` or `moving`. Protect changes this status to `leave` 0-9 seconds after the subject leaves the zone.
 - Without a zone filter, any event zone with `enter` or `moving` is sufficient.
-- An event from the last 15 seconds can also match the normal zone rule.
+- An event from the last 15 seconds can also match the status-other-than-`none` rule.
 - A match with `enter` or `moving` has priority over a match with another status. Config order breaks ties.
 
 A hit logs `Tracking lost — Cue: <name> <type> (<zone name>) → slot N`. It then uses the usual cue goto, hold, status, and resume path.
@@ -239,7 +239,7 @@ Patrol sends the cue goto one time. The usual bounded goto retries can send that
 
 Before the cue goto, patrol checks the time since the cue match. After more than 15 seconds, patrol drops the cue. This also applies after a schedule pause, manual hold, activity hold, or unreadable camera state. It logs `Cue dropped — <age>s old` and uses the path step selected by the half-dwell rule. Dynamic tracking does not skip that step.
 
-Normal cue polls read smart-detection events that started in the last 15 seconds. An event can become available while cue checks are off. It can fire when checks start again within the applicable start window. Protect lists new events about 3 seconds after their start. Patrol ignores the event's `end` field: a null value does not prove that the subject is present.
+An event can become available while cue checks are off. It can fire when checks start again within the 120-second start window, if its zone status matches the rules above. Protect lists new events about 3 seconds after their start. Patrol ignores the event's `end` field: a null value does not prove that the subject is present.
 
 Each cue entry can fire only once per event. Another entry can fire on the same event later, for example when the subject moves to another zone. Patrol reads event types and zone status again at each poll. This also applies when an entry is in cooldown or uses the PTZ's current slot. Fired entries stay in the seen map until their event start is older than 120 seconds.
 

@@ -107,8 +107,8 @@ discover.sh   -> api.sh
 - `/ptz/position` returns `.steps.{pan,tilt,zoom}` in motor steps, the *same* coordinate
   system as preset `.ptz.{pan,tilt,zoom}`. No ISP/zoom scaling conversion is needed.
 - For cue events, use repeated `cameras=` parameters and the `[]` fast path with no `jq` on an empty poll.
-- Keep normal cue polls at a 15-second event-start window. Use 120 seconds only for re-acquire polls after tracking in the current activity hold. Require readable PTZ state with no tracking or smart detection before those polls.
-- Match filtered cue zones only with status other than `none`. For re-acquire events older than 15 seconds, require `enter` or `moving` in a configured zone, or any zone for an unfiltered entry. Prefer current presence, then config order.
+- Read a 120-second event-start window in every cue poll. Require readable PTZ state with no tracking or smart detection before re-acquire polls after tracking in the current activity hold.
+- Match `enter` or `moving` in a configured zone, or any zone for an unfiltered entry. Also accept events from the last 15 seconds under the status-other-than-`none` rule. Prefer current presence, then config order.
 - Keep cue seen state per entry and event, and prune it after the 120-second event-start window. Keep cooldown per entry. Use the existing cue goto and resume path after a re-acquire hit.
 
 ## Behavioral invariants

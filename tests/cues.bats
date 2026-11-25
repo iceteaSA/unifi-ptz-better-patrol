@@ -78,7 +78,7 @@ load cue_test_helper
 @test "cue URL repeats distinct cameras and empty polls start no jq" {
   run cue_empty_probe
   [ "$status" -eq 0 ]
-  assert_contains "$output" '/events?start=985000&end=1000000&types=smartDetectZone&cameras=fixed1&cameras=fixed2'
+  assert_contains "$output" '/events?start=880000&end=1000000&types=smartDetectZone&cameras=fixed1&cameras=fixed2'
   assert_not_contains "$output" 'cameras=fixed1,fixed2'
   assert_contains "$output" '__poll_jq=0 pending=-1'
 }
