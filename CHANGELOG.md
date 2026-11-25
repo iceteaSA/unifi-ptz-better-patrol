@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.8.0](https://github.com/iceteaSA/unifi-ptz-better-patrol/compare/v1.7.0...v1.8.0) (2026-11-25)
+
+
+### Features
+
+* cue arbitration by current presence, pre-emption and own-event hold ([ab8d8dc](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/ab8d8dc0a4c8b171231e4829b75d08f2ca775a47))
+* let a newer cue pre-empt a cue hold ([40b0af6](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/40b0af694e066b4d03afbbc3d3dfd29dc78f9335))
+* log cue skip reasons at debug level ([1c9f6a7](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/1c9f6a759fc09cb106b76e8870b34216e6a615e3))
+* match cue zones by current presence in every poll ([3056a0c](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/3056a0c9d42916764e85dc35fab5b5b11e067c5c))
+
+
+### Bug Fixes
+
+* check the camera position again after an own-event hold ([631fc29](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/631fc29ed9bb73c298e16e09f1ac05b590012bb6))
+* clear the cue hold when a pre-empting cue expires ([37d1dcb](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/37d1dcb784411bc9ca6b53393713ebc5794da59f))
+* do not re-issue a goto while the PTZ has its own smart event ([bb3daa2](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/bb3daa21d5363d9550c308fffc1ef453d28c53e5))
+* hold the current slot for a cue that targets it ([43e4d72](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/43e4d72f05770845025877c58111b286e85f6da8))
+* keep goto state when an already-there cue is dropped ([f623c41](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/f623c41475e2c4adb5221de53fc69a7384d786ca))
+* keep own smart events in view for 120 s ([b6ede66](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/b6ede666d47e772fcdc79e3805153cbd03393a6d))
+
+
+### Documentation
+
+* bring the README up to date for 1.7.0 ([95613ed](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/95613ed57f40d6dfe369f5af3d7bf95394fd548d))
+* bring the README up to date for 1.7.0 ([8b2fd95](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/8b2fd957a0e82ef5abe0048981bdc1116712048c))
+
 ## [1.7.0](https://github.com/iceteaSA/unifi-ptz-better-patrol/compare/v1.6.1...v1.7.0) (2026-11-23)
 
 
