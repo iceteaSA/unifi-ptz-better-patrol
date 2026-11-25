@@ -214,7 +214,9 @@ Zone ids stay usable if the startup camera read fails. Zone names do not. If the
 
 The cue log names the matched zone, for example `Cue: Path Cam person (Far side) → slot 0`. If no name is known, it shows the zone id. An entry without zones keeps the log without a zone name.
 
-Patrol checks cues at preset and home dwell polls, after activity and manual-control checks. Normal cue checks stop during activity, tracking, manual holds, schedule pauses, unreadable camera state, and cue dwell. The first applicable entry in config order wins. A cue for the current slot is skipped. Each entry has its own cooldown, which starts when that entry fires.
+Patrol checks cues at preset, home, and cue dwell polls, after activity and manual-control checks. Normal cue checks stop during activity, tracking, manual holds, schedule pauses, and unreadable camera state. Current zone presence wins, then config order. A cue for the current slot is skipped. Each entry has its own cooldown, which starts when that entry fires.
+
+A cue for a different slot ends a cue hold early. Its log adds `(pre-empts <previous cue name>)`. The status stays `cued`, with the new source in `cue_camera`. After the last cue hold, patrol resumes the path step selected before the first cue. A new cue does not apply the half-dwell rule again to that step.
 
 After a track is lost, cues can end the activity hold and re-acquire the subject. Once an activity hold has had a tracking poll, each later poll can check cues. The PTZ must be readable, must not track, and must have no active smart detection.
 
@@ -229,7 +231,7 @@ Every cue poll reads events that started in the last 120 seconds:
 
 A hit logs `Tracking lost — Cue: <name> <type> (<zone name>) → slot N`. It then uses the usual cue goto, hold, status, and resume path.
 
-The cue uses the usual goto, target acquisition, retry, drift, and HomeView checks. It uses `hold_seconds` for the dwell. The PTZ's own activity can extend that dwell through the usual hold. Motion-only time uses `max_tracking_wait`; smart detection or tracking uses `max_smart_wait`. Unknown activity stays on hold without a cap. Cues do not extend a cue hold.
+The cue uses the usual goto, target acquisition, retry, drift, and HomeView checks. It uses `hold_seconds` for the dwell. The PTZ's own activity can extend that dwell through the usual hold. Motion-only time uses `max_tracking_wait`. Smart detection or tracking uses `max_smart_wait`. Unknown activity stays on hold without a cap.
 
 If a cue stops a path step before half of that slot's dwell time, patrol repeats the step after the cue. Cues can cause only one repeat per path step. A second early cue counts that step as complete. The limit also applies with `cooldown_seconds: 0`. When the path advances, the next step can repeat one time. At half of the dwell time or more, patrol uses the next path step. This also applies on a `pingpong` path. If that advance ends a cycle, patrol skips that cycle's home visit. A cue from a home dwell resumes at the first path step, or the second if the cue held the first step's slot.
 

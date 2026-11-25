@@ -710,7 +710,11 @@ _patrol_poll_cues() {
           cue_until[i]=$(( now + cue_cooldowns[i] ))
           local prefix=""
           (( reacquire == 0 )) || prefix="Tracking lost — "
-          log "$cam_name" "info" "${prefix}Cue: ${cue_names[$i]} $cue_match$matched_zone → slot ${cue_slots[$i]}"
+          local suffix=""
+          if (( ${cue_in_progress:-0} )) && [[ "${cue_slots[$i]}" != "${cue_slot:--1}" ]]; then
+            suffix=" (pre-empts $status_cue_camera)"
+          fi
+          log "$cam_name" "info" "${prefix}Cue: ${cue_names[$i]} $cue_match$matched_zone → slot ${cue_slots[$i]}$suffix"
           return 0
         fi
       done
@@ -739,12 +743,13 @@ _patrol_status_tick() {
   if [[ "$next_state" != "$status_state" ]]; then
     status_state=$next_state
     status_since=$now
-  elif (( status_heartbeat_seconds == 0 || now - status_last_post < status_heartbeat_seconds )); then
+  elif [[ "$next_state" != cued || "${status_cue_changed:-0}" == 0 ]] && (( status_heartbeat_seconds == 0 || now - status_last_post < status_heartbeat_seconds )); then
     return 0
   fi
   local cue_camera=""
   [[ "$status_state" != cued ]] || cue_camera=${status_cue_camera:-}
   api_post_status "$cam_id" "$cam_name" "$status_state" "$status_slot" "$status_since" "$now" "$status_version" "$cue_camera"
+  status_cue_changed=0
   status_last_post=$now
 }
 
@@ -1019,7 +1024,7 @@ patrol_camera() {
   fi
 
   local status_state="" status_since=0 status_last_post=0 status_slot=""
-  local status_idle_state=patrolling status_cue_camera=""
+  local status_idle_state=patrolling status_cue_camera="" status_cue_changed=0
   local status_heartbeat_seconds=300 status_version=""
   if [[ -n "$_STATUS_WEBHOOK_URL" ]]; then
     status_heartbeat_seconds=$(jq -r '
@@ -1259,7 +1264,7 @@ patrol_camera() {
   fi
 
   while true; do
-    if (( cue_in_progress )); then
+    if (( cue_in_progress && cue_pending < 0 )); then
       cue_in_progress=0
       status_idle_state=patrolling
       status_cue_camera=""
@@ -1553,7 +1558,7 @@ patrol_camera() {
       (( unknown_seconds == 0 )) || unknown_info=", unknown ${unknown_seconds}s"
       log "$cam_name" "info" "Activity hold ended after ${waited}s (tracking ${tracking_seconds}s, smart ${smart_seconds}s, motion ${motion_seconds}s${unknown_info})"
     fi
-    if (( activity_active == 0 )); then
+    if (( activity_active == 0 && cue_in_progress == 0 )); then
       _patrol_status_tick patrolling
     fi
     if (( cue_pending >= 0 )); then
@@ -1591,6 +1596,7 @@ patrol_camera() {
       cue_slot=$slot
       cue_hold=${cue_holds[$cue_pending]}
       status_cue_camera=${cue_names[$cue_pending]}
+      status_cue_changed=1
       status_idle_state=cued
       cue_in_progress=1
       cue_resume=1
@@ -1789,7 +1795,7 @@ patrol_camera() {
         dwell_interrupted=1
         break
       fi
-      if (( cue_in_progress == 0 && _LAST_ACTIVITY_KNOWN == 1 && _LAST_TRACKING_ACTIVE == 0 && dwell_drift_attempts == 0 )) && [[ -n "$cue_query" ]]; then
+      if (( _LAST_ACTIVITY_KNOWN == 1 && _LAST_TRACKING_ACTIVE == 0 && dwell_drift_attempts == 0 )) && [[ -n "$cue_query" ]]; then
         if _patrol_poll_cues; then break; fi
       fi
     done

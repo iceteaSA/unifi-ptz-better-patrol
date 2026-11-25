@@ -188,7 +188,7 @@ load cue_test_helper
   assert_not_contains "$output" '__forbidden_cue_poll'
 }
 
-@test "activity blocks cue checks until clear and cue dwell never polls events" {
+@test "activity blocks cue checks until clear" {
   CUE_FIRE_GOTO=2
   local mode
   for mode in integration-block integration-block-motion; do

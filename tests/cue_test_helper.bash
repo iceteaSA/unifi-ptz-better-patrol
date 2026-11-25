@@ -37,7 +37,7 @@ api_get() {
   _LAST_HTTP_CODE=$CUE_CODE
   if [[ "$1" == /events* ]]; then
     CUE_POLLS=$(( CUE_POLLS + 1 ))
-    if (( ${cue_in_progress:-0} != 0 || ${activity_active:-0} != 0 || ${_LAST_TRACKING_ACTIVE:-0} != 0 || ${_LAST_ACTIVITY_KNOWN:-1} != 1 )); then
+    if (( ${activity_active:-0} != 0 || ${_LAST_TRACKING_ACTIVE:-0} != 0 || ${_LAST_ACTIVITY_KNOWN:-1} != 1 )); then
       printf '__forbidden_cue_poll\n'
     fi
     _LAST_BODY=$CUE_BODY

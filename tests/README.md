@@ -90,6 +90,8 @@ camera, and a missing, `null` or `true` value patrols it.
 
 `field_test_helper.bash` supplies virtual time and patrol API stubs for field-feature tests.
 
+`cue_arbitration.bats` checks cue-hold pre-emption, activity gates, and the resume step. It uses `cue_arbitration_helper.bash` for virtual time and real-shaped events.
+
 `homeview_test_helper.bash` supplies HomeView responses and counts home and position reads.
 
 ### Provenance — read this before trusting the fixture

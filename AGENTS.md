@@ -110,6 +110,7 @@ discover.sh   -> api.sh
 - Read a 120-second event-start window in every cue poll. Require readable PTZ state with no tracking or smart detection before re-acquire polls after tracking in the current activity hold.
 - Match `enter` or `moving` in a configured zone, or any zone for an unfiltered entry. Also accept events from the last 15 seconds under the status-other-than-`none` rule. Prefer current presence, then config order.
 - Keep cue seen state per entry and event, and prune it after the 120-second event-start window. Keep cooldown per entry. Use the existing cue goto and resume path after a re-acquire hit.
+- Poll cues during cue holds with the usual activity, readability, and drift gates. On pre-emption, keep the selected resume step and the `cued` status until the last cue hold ends.
 
 ## Behavioral invariants
 
