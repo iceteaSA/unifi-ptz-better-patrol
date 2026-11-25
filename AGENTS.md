@@ -113,6 +113,7 @@ discover.sh   -> api.sh
 - Poll cues during cue holds with the usual activity, readability, and drift gates. On pre-emption, keep the selected resume step and the `cued` status until the last cue hold ends.
 - Accept a normal cue for `last_commanded_slot` without a goto. Mark it seen, start its cooldown, and restart its cue hold. Keep the motor settle clock. Send gotos for re-acquire and home-dwell cues.
 - Build cue diagnostic snapshots only at debug level, in the existing event parser. Keep the empty-event path free of jq processes.
+- Check the PTZ's own smart events before a failed-goto retry at both call sites. Hold on open events or events that ended in the last 10 seconds, including face-only events. Apply `max_smart_wait` across retries in the same episode. On a request error, warn once and keep the retry path. Make no event request without a pending retry.
 
 ## Behavioral invariants
 

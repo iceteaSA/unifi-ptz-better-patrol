@@ -208,6 +208,60 @@ _patrol_wait_for_camera_settle() {
   done
 }
 
+# Some firmware omits tracking flags for the PTZ's own smart events.
+# Wait here so neither failed-goto caller can advance during that activity.
+# Episode state uses caller scope and survives retries until an empty poll.
+_patrol_hold_own_smart_event() {
+  local poll_iv=${1:-5} now types poll_error
+  while true; do
+    printf -v now '%(%s)T' -1
+    types=""; poll_error=0
+    api_get "/events?start=$(( (now - 30) * 1000 ))&end=$(( now * 1000 ))&types=smartDetectZone&cameras=$cam_id"
+    if [[ "$_LAST_HTTP_CODE" != 200 ]]; then
+      poll_error=1
+    elif [[ "$_LAST_BODY" != '[]' ]]; then
+      types=$(jq -rs --arg self "$cam_id" --argjson now "$(( now * 1000 ))" '
+        if length != 1 then error("invalid events") else .[0] end
+        | if type != "array" then error("invalid events") else . end
+        | map(select(type == "object" and .camera == $self and has("end"))
+          | select(.end == null or ((.end | type) == "number" and .end >= $now - 10000 and .end <= $now)))
+        | if length == 0 then empty else
+            [.[].smartDetectTypes[]? | select(type == "string" and length > 0)] | unique
+            | if length == 0 then "unknown" else join(",") end
+          end
+      ' <<< "$_LAST_BODY" 2>/dev/null) || poll_error=1
+    fi
+    if (( poll_error )); then
+      if (( own_event_poll_failed == 0 )); then
+        log "$cam_name" "warn" "Own smart event check failed (HTTP $_LAST_HTTP_CODE, curl rc $_LAST_CURL_RC) — keeping goto retry behaviour"
+      fi
+      own_event_poll_failed=1
+      return 0
+    fi
+    own_event_poll_failed=0
+    if [[ -z "$types" ]]; then
+      own_event_since=0
+      own_event_capped=0
+      return 0
+    fi
+    printf -v now '%(%s)T' -1
+    if (( own_event_since == 0 )); then
+      own_event_since=$now
+      log "$cam_name" "info" "Goto target not acquired — own smart event ($types) open; holding instead of re-issuing"
+    fi
+    if (( max_smart_wait > 0 && now - own_event_since >= max_smart_wait )); then
+      if (( own_event_capped == 0 )); then
+        log "$cam_name" "warn" "Max smart wait (${max_smart_wait}s) hit on own smart event — resuming goto retries"
+      fi
+      own_event_capped=1
+      return 0
+    fi
+    _patrol_status_tick holding_activity "$now"
+    sleep "$poll_iv"
+    api_ensure_auth
+  done
+}
+
 # Re-issue a goto whose target has not been acquired. The retry count is
 # caller-scoped so the patrol can advance after the bounded limit instead of
 # entering a hold loop.
@@ -1294,6 +1348,7 @@ patrol_camera() {
   local acquisition_streak=0
   local goto_retry_count=0
   local goto_retry_limit=2
+  local own_event_since=0 own_event_poll_failed=0 own_event_capped=0
   local external_control_until=0
   local hold_home_pan=-1 hold_home_tilt=-1 hold_home_zoom=-1 hold_home_streak=0
   local schedule_paused=0
@@ -1516,6 +1571,7 @@ patrol_camera() {
         top_previous_drift=0
         # A pending cue replaces the old target. A completed cue must not restart.
         if (( last_commanded_slot >= 0 && cue_pending < 0 && cue_resume == 0 )); then
+          _patrol_hold_own_smart_event 5
           if _patrol_reissue_failed_goto "$cam_id" "$cam_name" "$last_commanded_slot" "$goto_retry_limit"; then
             sleep 5
             continue
@@ -1697,6 +1753,8 @@ patrol_camera() {
         if (( cue_no_goto == 0 )); then
           IFS=$'\t' read -r expected_pan expected_tilt expected_zoom <<< "$(get_preset_ptz "$preset_positions" "$slot")"
           goto_retry_count=0
+          own_event_since=0
+          own_event_capped=0
           log "$cam_name" "info" "→ Slot $slot [HTTP $code]"
         fi
         last_commanded_slot=$slot
@@ -1832,6 +1890,7 @@ patrol_camera() {
           dwell_drift_attempts=0
           dwell_drift_streak=0
           dwell_previous_drift=0
+          _patrol_hold_own_smart_event "$poll_interval_s"
           if _patrol_reissue_failed_goto "$cam_id" "$cam_name" "$slot" "$goto_retry_limit"; then
             continue
           fi

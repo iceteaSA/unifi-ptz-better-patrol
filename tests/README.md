@@ -94,6 +94,8 @@ camera, and a missing, `null` or `true` value patrols it.
 
 `cue_debug.bats` checks cue skip reasons, event snapshots, and the one-jq budget at info and debug levels.
 
+`own_smart_event.bats` checks failed-goto holds for the PTZ's own events, face-only events, recent ends, request errors, the hold cap, and both retry call sites. It uses `own_smart_event_helper.bash` for virtual time and request and jq counters.
+
 `homeview_test_helper.bash` supplies HomeView responses and counts home and position reads.
 
 ### Provenance — read this before trusting the fixture
