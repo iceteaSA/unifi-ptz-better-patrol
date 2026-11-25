@@ -253,6 +253,8 @@ Missing or empty `cues` adds no poll or goto processes and no HTTP requests. An 
 
 The first event request error logs one warning with the HTTP code and curl exit code. This includes a JSON parse error. More errors give no new warning until an event request succeeds. That success logs `Cue poll recovered`, also for an empty `[]` response. Usual empty polls give no log line.
 
+At debug level, `Cue skip` lines give the entry, short event id, event types, and a zone snapshot as `id:status` pairs. The reasons are `cooldown`, `seen`, `camera`, `type`, `zone`, and `window` (too old without current presence, or outside the 120-second window). `Cue fired` gives the same snapshot for a match. Info level adds no lines or jq processes for these diagnostics.
+
 ### Patrol Schedule
 
 By default, patrol runs 24/7. Add a `schedule` block to restrict patrol to specific time windows. This can be set globally in `defaults` or per-camera in `camera_overrides`.

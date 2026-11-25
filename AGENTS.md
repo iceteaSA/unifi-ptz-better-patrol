@@ -112,6 +112,7 @@ discover.sh   -> api.sh
 - Keep cue seen state per entry and event, and prune it after the 120-second event-start window. Keep cooldown per entry. Use the existing cue goto and resume path after a re-acquire hit.
 - Poll cues during cue holds with the usual activity, readability, and drift gates. On pre-emption, keep the selected resume step and the `cued` status until the last cue hold ends.
 - Accept a normal cue for `last_commanded_slot` without a goto. Mark it seen, start its cooldown, and restart its cue hold. Keep the motor settle clock. Send gotos for re-acquire and home-dwell cues.
+- Build cue diagnostic snapshots only at debug level, in the existing event parser. Keep the empty-event path free of jq processes.
 
 ## Behavioral invariants
 

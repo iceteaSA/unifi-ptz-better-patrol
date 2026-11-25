@@ -609,14 +609,27 @@ _patrol_parse_cues() {
   return 0
 }
 
+# The two priority passes can reject a pair before the other pass accepts it.
+# Emit only the final reason, not an intermediate priority rejection.
+_patrol_log_cue_skips() {
+  (( _LOG_LEVEL >= 3 )) || return 0
+  local key i j
+  for key in "${!cue_skip_reasons[@]}"; do
+    i=${key%%:*}; j=${key#*:}
+    log "$cam_name" "debug" "Cue skip entry=$i (${cue_names[$i]}) reason=${cue_skip_reasons[$key]} ${event_debug[$j]}"
+  done
+}
+
 # Reads the caller's cue arrays and last_commanded_slot. Writes cue_seen,
 # cue_pending, cue_match, cue_matched_at, cue_until and cue_poll_failed.
 # A poll error must not hold patrol.
 _patrol_poll_cues() {
   local reacquire=${1:-0}
-  local now cutoff recent_cutoff id src start zones now_zones types rows i j etype zone_id zone_match priority matched_zone key
+  local now cutoff recent_cutoff id src start zones now_zones types rows i j etype zone_id zone_match priority matched_zone key snapshot
+  local debug=$(( _LOG_LEVEL >= 3 ))
   local poll_error=0
-  local -a event_cameras=() event_types=() event_ids=() event_starts=() event_zones=() event_now_zones=() tokens=() zone_tokens=()
+  local -a event_cameras=() event_types=() event_ids=() event_starts=() event_zones=() event_now_zones=() tokens=() zone_tokens=() event_debug=()
+  local -A cue_skip_reasons=()
   cue_no_goto=0
   (( reacquire )) || cue_pending=-1
   [[ -n "${cue_query:-}" ]] || return 1
@@ -630,7 +643,7 @@ _patrol_poll_cues() {
   if [[ "$_LAST_HTTP_CODE" != 200 ]]; then
     poll_error=1
   elif [[ "$_LAST_BODY" != '[]' ]]; then
-    rows=$(jq -rs '
+    rows=$(jq -rs --argjson debug "$debug" '
       if length != 1 then error("invalid events") else .[0] end
       | if type != "array" then error("invalid events") else .[] end
       | select(type == "object")
@@ -639,6 +652,7 @@ _patrol_poll_cues() {
         and (.start | floor) == .start and (.smartDetectTypes | type) == "array")
       | (.metadata.zonesStatus | if type == "object" then to_entries else [] end) as $zones
       | [(.id | tojson), (.camera | tojson), (.start | tostring),
+          (if $debug == 1 then "event=\(.id[0:8]) types=\(.smartDetectTypes | tojson) zonesStatus=\($zones | map(.key + ":" + (.value.status | tostring)) | join(",") | tojson)" else "-" end),
           ($zones | map(select((.value | type) == "object" and .value.status != "none") | .key) | tojson),
           ($zones | map(select((.value | type) == "object"
             and (.value.status == "enter" or .value.status == "moving")) | .key) | tojson)]
@@ -661,31 +675,50 @@ _patrol_poll_cues() {
   printf -v now '%(%s)T' -1
   recent_cutoff=$(( (now - 15) * 1000 ))
   cutoff=$(( (now - 120) * 1000 ))
-  while IFS=$'\t' read -r id src start zones now_zones types; do
+  while IFS=$'\t' read -r id src start snapshot zones now_zones types; do
     [[ -n "$id" && -n "$types" ]] || continue
     [[ "$start" =~ ^[0-9]+$ ]] || continue
-    (( start >= cutoff && start <= now * 1000 )) || continue
     event_cameras+=("$src")
     event_types+=("$types")
     event_ids+=("$id")
     event_starts+=("$start")
     event_zones+=("$zones")
     event_now_zones+=("$now_zones")
+    event_debug+=("$snapshot")
   done <<< "$rows"
   # Current zone presence has priority over a recent event with another status.
   for (( priority=1; priority>=0; priority-- )); do
   for (( i=0; i<${#cue_slots[@]}; i++ )); do
-    (( now >= cue_until[i] )) || continue
     for (( j=0; j<${#event_cameras[@]}; j++ )); do
-      [[ "${event_cameras[$j]}" == "\"${cue_camera_ids[$i]}\"" ]] || continue
+      if (( now < cue_until[i] )); then
+        (( debug == 0 )) || cue_skip_reasons["$i:$j"]=cooldown
+        continue
+      fi
+      if [[ "${event_cameras[$j]}" != "\"${cue_camera_ids[$i]}\"" ]]; then
+        (( debug == 0 )) || cue_skip_reasons["$i:$j"]=camera
+        continue
+      fi
       key="$i:${event_ids[$j]}"
-      [[ -z "${cue_seen[$key]+x}" ]] || continue
+      if [[ -n "${cue_seen[$key]+x}" ]]; then
+        (( debug == 0 )) || cue_skip_reasons["$i:$j"]=seen
+        continue
+      fi
+      if (( event_starts[j] < cutoff || event_starts[j] > now * 1000 )); then
+        (( debug == 0 )) || cue_skip_reasons["$i:$j"]=window
+        continue
+      fi
       zones=${event_zones[$j]}
       if (( priority )); then
         zones=${event_now_zones[$j]}
-        [[ "$zones" != '[]' ]] || continue
+        if [[ "$zones" == '[]' ]]; then
+          if (( debug && event_starts[j] < recent_cutoff )); then cue_skip_reasons["$i:$j"]=window; fi
+          continue
+        fi
       else
-        (( event_starts[j] >= recent_cutoff )) || continue
+        if (( event_starts[j] < recent_cutoff )); then
+          if (( debug )) && [[ "${cue_skip_reasons["$i:$j"]:-}" != type ]]; then cue_skip_reasons["$i:$j"]=window; fi
+          continue
+        fi
       fi
       matched_zone=""
       if [[ -n "${cue_zones[$i]:-}" ]]; then
@@ -698,7 +731,10 @@ _patrol_poll_cues() {
             break
           fi
         done
-        (( zone_match )) || continue
+        if (( zone_match == 0 )); then
+          if (( debug && (priority == 0 || event_starts[j] < recent_cutoff) )); then cue_skip_reasons["$i:$j"]=zone; fi
+          continue
+        fi
       fi
       IFS=$'\t' read -r -a tokens <<< "${event_types[$j]}"
       for etype in "${tokens[@]}"; do
@@ -720,12 +756,19 @@ _patrol_poll_cues() {
             suffix=" (pre-empts $status_cue_camera)"
           fi
           log "$cam_name" "info" "${prefix}Cue: ${cue_names[$i]} $cue_match$matched_zone → slot ${cue_slots[$i]}$suffix"
+          if (( debug )); then
+            unset 'cue_skip_reasons[$i:$j]'
+            _patrol_log_cue_skips
+            log "$cam_name" "debug" "Cue fired entry=$i ${event_debug[$j]}"
+          fi
           return 0
         fi
       done
+      (( debug == 0 )) || cue_skip_reasons["$i:$j"]="type"
     done
   done
   done
+  (( debug == 0 )) || _patrol_log_cue_skips
   return 1
 }
 

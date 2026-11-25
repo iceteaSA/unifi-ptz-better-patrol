@@ -92,6 +92,8 @@ camera, and a missing, `null` or `true` value patrols it.
 
 `cue_arbitration.bats` checks cue-hold pre-emption, activity gates, the resume step, and already-there holds without a goto. It uses `cue_arbitration_helper.bash` for virtual time and real-shaped events.
 
+`cue_debug.bats` checks cue skip reasons, event snapshots, and the one-jq budget at info and debug levels.
+
 `homeview_test_helper.bash` supplies HomeView responses and counts home and position reads.
 
 ### Provenance — read this before trusting the fixture

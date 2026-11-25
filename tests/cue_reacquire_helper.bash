@@ -33,6 +33,7 @@ reacquire_fixture() {
 
 reacquire_poll_probe() {
   local mode=$1
+  local _LOG_LEVEL=${REACQUIRE_DEBUG:-2}
   local -x cam_id=cam1 cam_name=Overwatch last_commanded_slot=0
   local cam_config='{"cues":[{"camera_id":"fixed1","slot":4,"zones":["Past pole"],"cooldown_seconds":10},{"camera_id":"fixed1","slot":2,"zones":["Near side"],"cooldown_seconds":10}]}'
   local -x cam_discovery_json='{"presets":[{"slot":0},{"slot":4},{"slot":2}]}'
@@ -60,11 +61,14 @@ reacquire_poll_probe() {
     stale) CUE_BODY=$(reacquire_fixture 879000) ;;
     future) CUE_BODY=$(reacquire_fixture 1001000) ;;
     types) CUE_BODY=$(command jq -c '.[0].smartDetectTypes=["animal"]' <<< "$CUE_BODY") ;;
+    camera) CUE_BODY=$(command jq -c '.[0].camera="other"' <<< "$CUE_BODY") ;;
+    zone) CUE_BODY=$(reacquire_fixture 999000); CUE_BODY=$(command jq -c '.[0].metadata.zonesStatus["2"].status="none"' <<< "$CUE_BODY") ;;
     documents) CUE_BODY+=$'\n[]' ;;
   esac
   _patrol_parse_cues
   [[ "$mode" != cooldown ]] || cue_until[0]=1001
   [[ "$mode" != current ]] || last_commanded_slot=4
+  if [[ "$mode" == seen ]]; then cue_seen['0:"eeeeeeee-eeee-eeee-eeee-eeeeeeeeeee1"']=970000; fi
   # Count only poll processes, not fixture preparation or startup validation.
   REACQUIRE_COUNTS="$BATS_TEST_TMPDIR/poll-jq"
   : > "$REACQUIRE_COUNTS"
