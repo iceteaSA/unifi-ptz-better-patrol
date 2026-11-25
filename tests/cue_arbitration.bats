@@ -44,6 +44,15 @@ load cue_arbitration_helper
   assert_not_contains "$output" '__goto=0 now=1002'
 }
 
+@test "a dropped already-there cue does not suppress the next goto bookkeeping" {
+  run arbitration_probe already-drop
+  assert_contains "$output" '(already there)'
+  assert_contains "$output" 'Cue dropped'
+  local after=${output#*Cue dropped}
+  assert_contains "$after" '__goto=0 now=1032 cue=0'
+  assert_contains "$after" '→ Slot 0 [HTTP 200]'
+}
+
 @test "reacquire sends a goto even for the last commanded slot" {
   run arbitration_probe reacquire-current
   [ "$status" -eq 0 ]

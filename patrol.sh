@@ -1726,10 +1726,13 @@ patrol_camera() {
       _patrol_wait_for_camera_settle "$cam_id" "$cam_name" 30 || true
       startup_settle_pending=0
     fi
-    local code
+    local code goto_skipped=0
+    # The skip flag must not outlive its cue, or a real goto loses its target state.
     if (( cue_in_progress && cue_no_goto )); then
       code=200
+      goto_skipped=1
     else
+      cue_no_goto=0
       api_post_with_retry "/cameras/$cam_id/ptz/goto/$slot" 2 3 >/dev/null || true
       code="$_LAST_HTTP_CODE"
     fi
@@ -1748,7 +1751,7 @@ patrol_camera() {
         poll_interval_s=$(( slot_dwell / 3 ))
         (( poll_interval_s > 5 )) && poll_interval_s=5
         (( poll_interval_s < 2 )) && poll_interval_s=2
-        if (( cue_no_goto == 0 )); then
+        if (( goto_skipped == 0 )); then
           last_goto_ts=$(date +%s)
           acquisition_state="acquiring"
           acquisition_streak=0
@@ -1759,7 +1762,7 @@ patrol_camera() {
         # Set expected position from preset data.  is_externally_controlled()
         # compares these against the live /ptz/position (motor steps), so the
         # coordinate system matches directly — no ISP zoom scaling needed.
-        if (( cue_no_goto == 0 )); then
+        if (( goto_skipped == 0 )); then
           IFS=$'\t' read -r expected_pan expected_tilt expected_zoom <<< "$(get_preset_ptz "$preset_positions" "$slot")"
           goto_retry_count=0
           own_event_since=0

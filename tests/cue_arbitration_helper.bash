@@ -25,6 +25,14 @@ api_get_camera_state() {
   if [[ "$ARB_MODE" == reacquire-current ]] && (( FIELD_NOW >= 1002 && FIELD_NOW < 1007 )); then
     _CACHED_CAM_STATE='{"id":"cam1","state":"CONNECTED","isAutoTracking":true}'
   fi
+  # Motion starts right after the cue match, so the matched cue waits in an
+  # activity hold until it is too old and patrol drops it.
+  if [[ "$ARB_MODE" == already-drop ]]; then
+    (( ARB_DELAYED == 1 || cue_pending < 0 )) || ARB_DELAYED=1
+    if (( ARB_DELAYED == 1 && FIELD_NOW < 1030 )); then
+      _CACHED_CAM_STATE='{"id":"cam1","state":"CONNECTED","isMotionDetected":true}'
+    fi
+  fi
   if (( FIELD_NOW >= 1007 )); then
     case "$ARB_MODE" in
       tracking) _CACHED_CAM_STATE='{"id":"cam1","state":"CONNECTED","isAutoTracking":true}' ;;
@@ -65,7 +73,7 @@ arbitration_probe() {
   ARB_SECOND=$(cue_fixture 1006000 | command jq -c '.[0:1] | .[0].camera="fixed2"')
   local -x FIELD_CONFIG='{"dwell_seconds":6,"ptz_settle_seconds":0,"cues":[{"camera_id":"fixed1","slot":4,"zones":["Past pole"],"hold_seconds":20},{"camera_id":"fixed2","slot":2,"hold_seconds":5}]}'
   [[ "$ARB_MODE" != same ]] || FIELD_CONFIG=${FIELD_CONFIG/\"slot\":2/\"slot\":4}
-  if [[ "$ARB_MODE" == already || "$ARB_MODE" == reacquire-current ]]; then
+  if [[ "$ARB_MODE" == already || "$ARB_MODE" == already-drop || "$ARB_MODE" == reacquire-current ]]; then
     FIELD_CONFIG='{"dwell_seconds":6,"ptz_settle_seconds":0,"cues":[{"camera_id":"fixed1","slot":0,"zones":["Past pole"],"hold_seconds":5,"cooldown_seconds":10}]}'
     ARB_SECOND='[]'
     [[ "$ARB_MODE" != reacquire-current ]] || ARB_SECOND=$ARB_FIRST
