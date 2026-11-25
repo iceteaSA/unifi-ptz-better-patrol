@@ -18,9 +18,13 @@ api_get() {
     error) _LAST_HTTP_CODE=503 ;;
     malformed) _LAST_BODY='' ;;
     documents) _LAST_BODY+=$'\n[]' ;;
-    open|face|dwell|top) if (( CUE_NOW >= 1012 )); then _LAST_BODY='[]'; fi ;;
+    open|face|dwell|top|long) if (( CUE_NOW >= 1012 )); then _LAST_BODY='[]'; fi ;;
     unlimited) if (( CUE_NOW >= 1072 )); then _LAST_BODY='[]'; fi ;;
   esac
+  # Protect filters on event start, so an event older than the window drops out.
+  if [[ "$1" =~ start=([0-9]+) && "$_LAST_BODY" == '['* && "$_LAST_BODY" != '[]' && "$OWN_MODE" != documents ]]; then
+    _LAST_BODY=$(command jq -c --argjson s "${BASH_REMATCH[1]}" 'map(select(.start >= $s))' <<< "$_LAST_BODY")
+  fi
 }
 
 jq() {
@@ -44,6 +48,7 @@ own_prepare() {
     recent) OWN_BODY=$(command jq -c '.[0].end=995000' <<< "$OWN_BODY") ;;
     stale) OWN_BODY=$(command jq -c '.[0].end=989000' <<< "$OWN_BODY") ;;
     other) OWN_BODY=$(command jq -c '.[0].camera="other"' <<< "$OWN_BODY") ;;
+    long) OWN_BODY=$(command jq -c '.[0].start=940000' <<< "$OWN_BODY") ;;
   esac
   OWN_COUNTS="$BATS_TEST_TMPDIR/own-jq"
   : > "$OWN_COUNTS"

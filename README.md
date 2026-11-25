@@ -172,7 +172,7 @@ For each slot, the settle window uses `ptz_settle_seconds`. Its maximum is half 
 
 Protect can send the camera to its HomeView after auto-tracking. For each drift check after target acquisition, patrol reads `/cameras/{id}/ptz/home` one time. The maximum difference from HomeView is 200 pan/tilt steps and 30 zoom steps. This maximum applies to each axis.
 
-Before a failed-goto retry, patrol checks this PTZ's smart events from the last 30 seconds. An open event, or one that ended in the last 10 seconds, holds patrol instead of pulling the camera off its subject. All event types count, including face-only events with no active zone. The status is `holding_activity`. Patrol checks again at each poll and limits the hold with `max_smart_wait` (`0` has no limit).
+Before a failed-goto retry, patrol checks this PTZ's smart events that started in the last 120 seconds. An open event, or one that ended in the last 10 seconds, holds patrol instead of pulling the camera off its subject. All event types count, including face-only events with no active zone. The status is `holding_activity`. Patrol checks again at each poll and limits the hold with `max_smart_wait` (`0` has no limit).
 
 Patrol logs `Goto target not acquired — own smart event (<types>) open; holding instead of re-issuing` once for the hold. When the event clears or the hold reaches its limit, the usual bounded goto retries continue. An event request or parse error logs one warning and keeps the previous retry behaviour. Polls without a pending retry make no extra request.
 

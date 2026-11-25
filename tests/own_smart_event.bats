@@ -6,10 +6,17 @@ load own_smart_event_helper
   run own_check_probe open
   [ "$status" -eq 0 ]
   assert_contains "$output" 'Goto target not acquired — own smart event (person) open; holding instead of re-issuing'
-  assert_contains "$output" '/events?start=970000&end=1000000&types=smartDetectZone&cameras=cam1'
+  assert_contains "$output" '/events?start=880000&end=1000000&types=smartDetectZone&cameras=cam1'
   assert_contains "$output" '__own_done now=1012 requests=7 jq=6 since=0 capped=0 failed=0'
   local without=${output//holding instead of re-issuing/}
   [ "$(( ${#output} - ${#without} ))" -eq 29 ]
+}
+
+@test "an own event that started 60 seconds ago and is still open holds" {
+  run own_check_probe long
+  [ "$status" -eq 0 ]
+  assert_contains "$output" 'own smart event (person) open; holding instead of re-issuing'
+  assert_contains "$output" '__own_done now=1012'
 }
 
 @test "face-only event holds even when every zone status is none" {

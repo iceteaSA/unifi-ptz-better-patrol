@@ -216,7 +216,7 @@ _patrol_hold_own_smart_event() {
   while true; do
     printf -v now '%(%s)T' -1
     types=""; poll_error=0
-    api_get "/events?start=$(( (now - 30) * 1000 ))&end=$(( now * 1000 ))&types=smartDetectZone&cameras=$cam_id"
+    api_get "/events?start=$(( (now - 120) * 1000 ))&end=$(( now * 1000 ))&types=smartDetectZone&cameras=$cam_id"
     if [[ "$_LAST_HTTP_CODE" != 200 ]]; then
       poll_error=1
     elif [[ "$_LAST_BODY" != '[]' ]]; then
