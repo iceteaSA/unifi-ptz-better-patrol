@@ -172,6 +172,10 @@ For each slot, the settle window uses `ptz_settle_seconds`. Its maximum is half 
 
 Protect can send the camera to its HomeView after auto-tracking. For each drift check after target acquisition, patrol reads `/cameras/{id}/ptz/home` one time. The maximum difference from HomeView is 200 pan/tilt steps and 30 zoom steps. This maximum applies to each axis.
 
+Before a failed-goto retry, patrol checks this PTZ's smart events that started in the last 120 seconds. An open event, or one that ended in the last 10 seconds, holds patrol instead of pulling the camera off its subject. All event types count, including face-only events with no active zone. The status is `holding_activity`. Patrol checks again at each poll and limits the hold with `max_smart_wait` (`0` has no limit).
+
+Patrol logs `Goto target not acquired — own smart event (<types>) open; holding instead of re-issuing` once for the hold. When the event clears or the hold reaches its limit, patrol checks the camera position again at the next poll. A retry follows only if the camera is still away from its target. The events API filters on event start, so an own event that started more than 120 seconds ago no longer holds patrol. An event request or parse error logs one warning and keeps the previous retry behaviour. Polls without a pending retry make no extra request.
+
 Patrol then skips the manual-control hold and stops position checks until the next goto. If patrol cannot read HomeView, or its data is invalid, the usual drift rules apply. Patrol also skips this hold when you push Home in the Protect app: it counts as camera-initiated movement.
 
 If a manual-control hold starts while the camera is still away from HomeView, patrol keeps the HomeView coordinates from that drift check. During the hold, it reads the position every 5 seconds if those coordinates are known. Two consecutive reads within the same per-axis limits end the hold early. Patrol logs `Camera returned to its HomeView — ending manual hold` and clears the old target before normal checks resume. A failed or invalid position read resets the count and keeps the hold. An unknown HomeView keeps the full hold, with no position reads during it. This rule handles short auto-tracking starts that Protect returns to HomeView after its tracking timeout, even without a confirmed smart detection. A manual joystick move does not cause that return. If you push Home in the Protect app during a hold, the hold also ends after about 10 seconds. Move the camera again to start a new hold.
@@ -214,22 +218,28 @@ Zone ids stay usable if the startup camera read fails. Zone names do not. If the
 
 The cue log names the matched zone, for example `Cue: Path Cam person (Far side) → slot 0`. If no name is known, it shows the zone id. An entry without zones keeps the log without a zone name.
 
-Patrol checks cues at preset and home dwell polls, after activity and manual-control checks. Normal cue checks stop during activity, tracking, manual holds, schedule pauses, unreadable camera state, and cue dwell. The first applicable entry in config order wins. A cue for the current slot is skipped. Each entry has its own cooldown, which starts when that entry fires.
+Patrol checks cues at preset, home, and cue dwell polls, after activity and manual-control checks. Normal cue checks stop during activity, tracking, manual holds, schedule pauses, and unreadable camera state. Current zone presence wins, then config order. Each entry has its own cooldown, which starts when that entry fires.
+
+A cue for the current commanded slot logs `(already there)` and starts a cue hold without a goto. It marks the event seen and starts the entry's cooldown. During a cue hold at that slot, it starts the hold timer again with the new entry's `hold_seconds`. Re-acquire cues still send a goto because tracking moved the camera. Home dwell has no commanded preset slot, so a home-dwell cue also sends a goto.
+
+The entry's cooldown limits these timer restarts. With the default 120 seconds, an entry can restart a hold at most once in 120 seconds. With `cooldown_seconds: 0`, new events from the source can keep the slot on hold. The same event cannot restart that entry's hold again.
+
+A cue for a different slot ends a cue hold early. Its log adds `(pre-empts <previous cue name>)`. The status stays `cued`, with the new source in `cue_camera`. After the last cue hold, patrol resumes the path step selected before the first cue. A new cue does not apply the half-dwell rule again to that step.
 
 After a track is lost, cues can end the activity hold and re-acquire the subject. Once an activity hold has had a tracking poll, each later poll can check cues. The PTZ must be readable, must not track, and must have no active smart detection.
 
 This includes the poll that ends the hold. These checks use the usual poll interval, with no additional sleep. Holds that never had tracking do not check cues.
 
-Re-acquire checks read events that started in the last 120 seconds:
+Every cue poll reads events that started in the last 120 seconds:
 
 - For an event older than 15 seconds, a configured zone must show `enter` or `moving`. Protect changes this status to `leave` 0-9 seconds after the subject leaves the zone.
 - Without a zone filter, any event zone with `enter` or `moving` is sufficient.
-- An event from the last 15 seconds can also match the normal zone rule.
+- An event from the last 15 seconds can also match the status-other-than-`none` rule.
 - A match with `enter` or `moving` has priority over a match with another status. Config order breaks ties.
 
 A hit logs `Tracking lost — Cue: <name> <type> (<zone name>) → slot N`. It then uses the usual cue goto, hold, status, and resume path.
 
-The cue uses the usual goto, target acquisition, retry, drift, and HomeView checks. It uses `hold_seconds` for the dwell. The PTZ's own activity can extend that dwell through the usual hold. Motion-only time uses `max_tracking_wait`; smart detection or tracking uses `max_smart_wait`. Unknown activity stays on hold without a cap. Cues do not extend a cue hold.
+The cue uses the usual goto, target acquisition, retry, drift, and HomeView checks. It uses `hold_seconds` for the dwell. The PTZ's own activity can extend that dwell through the usual hold. Motion-only time uses `max_tracking_wait`. Smart detection or tracking uses `max_smart_wait`. Unknown activity stays on hold without a cap.
 
 If a cue stops a path step before half of that slot's dwell time, patrol repeats the step after the cue. Cues can cause only one repeat per path step. A second early cue counts that step as complete. The limit also applies with `cooldown_seconds: 0`. When the path advances, the next step can repeat one time. At half of the dwell time or more, patrol uses the next path step. This also applies on a `pingpong` path. If that advance ends a cycle, patrol skips that cycle's home visit. A cue from a home dwell resumes at the first path step, or the second if the cue held the first step's slot.
 
@@ -239,13 +249,17 @@ Patrol sends the cue goto one time. The usual bounded goto retries can send that
 
 Before the cue goto, patrol checks the time since the cue match. After more than 15 seconds, patrol drops the cue. This also applies after a schedule pause, manual hold, activity hold, or unreadable camera state. It logs `Cue dropped — <age>s old` and uses the path step selected by the half-dwell rule. Dynamic tracking does not skip that step.
 
-Normal cue polls read smart-detection events that started in the last 15 seconds. An event can become available while cue checks are off. It can fire when checks start again within the applicable start window. Protect lists new events about 3 seconds after their start. Patrol ignores the event's `end` field: a null value does not prove that the subject is present.
+If a pre-empting cue expires before its goto, the previous cue hold also ends. Patrol clears its cue status and resumes the selected path step. The previous hold cannot supply the dwell time or source name for that path step.
 
-Each cue entry can fire only once per event. Another entry can fire on the same event later, for example when the subject moves to another zone. Patrol reads event types and zone status again at each poll. This also applies when an entry is in cooldown or uses the PTZ's current slot. Fired entries stay in the seen map until their event start is older than 120 seconds.
+An event can become available while cue checks are off. It can fire when checks start again within the 120-second start window, if its zone status matches the rules above. Protect lists new events about 3 seconds after their start. Patrol ignores the event's `end` field: a null value does not prove that the subject is present.
+
+Each cue entry can fire only once per event. Another entry can fire on the same event later, for example when the subject moves to another zone. Patrol reads event types and zone status again at each poll. This also applies when an entry is in cooldown. Fired entries stay in the seen map until their event start is older than 120 seconds.
 
 Missing or empty `cues` adds no poll or goto processes and no HTTP requests. An empty event poll starts one curl and no jq. An event request error gives no cue and does not stop patrol.
 
 The first event request error logs one warning with the HTTP code and curl exit code. This includes a JSON parse error. More errors give no new warning until an event request succeeds. That success logs `Cue poll recovered`, also for an empty `[]` response. Usual empty polls give no log line.
+
+At debug level, `Cue skip` lines give the entry, short event id, event types, and a zone snapshot as `id:status` pairs. The reasons are `cooldown`, `seen`, `camera`, `type`, `zone`, and `window` (too old without current presence, or outside the 120-second window). `Cue fired` gives the same snapshot for a match. Info level adds no lines or jq processes for these diagnostics.
 
 ### Patrol Schedule
 

@@ -32,11 +32,20 @@ load cue_reacquire_helper
   assert_not_contains "$output" 'Tracking lost — Cue:'
 }
 
-@test "normal cue polls still reject old enter events" {
+@test "normal polls hand off an 18 second event to its second zone" {
   run reacquire_poll_probe normal-old
   [ "$status" -eq 0 ]
-  assert_contains "$output" 'start=985000&end=1000000'
+  assert_contains "$output" 'start=880000&end=1000000'
+  assert_contains "$output" '__match=1 rc=0 type=person at=1000 until=0 seen=1 jq=1'
+  assert_contains "$output" 'Cue: Horsetrail Up person (Near side) → slot 2'
+  assert_not_contains "$output" 'Tracking lost'
+}
+
+@test "normal polls reject old leave events despite a null end" {
+  run reacquire_poll_probe normal-leave
+  [ "$status" -eq 0 ]
   assert_contains "$output" '__match=-1 rc=1 type= at=0 until=0 seen=0 jq=1'
+  assert_not_contains "$output" 'Cue: Horsetrail Up'
 }
 
 @test "reacquire accepts recent leave under the normal rule" {
@@ -81,9 +90,9 @@ load cue_reacquire_helper
   assert_contains "$output" '__match=0 rc=0 type=person at=1000 until=1120 seen=1 jq=1'
 }
 
-@test "reacquire respects cooldown current slot types and window limits" {
+@test "reacquire respects cooldown types and window limits" {
   local mode
-  for mode in cooldown current types stale future; do
+  for mode in cooldown types stale future; do
     run reacquire_poll_probe "$mode"
     [ "$status" -eq 0 ]
     if [[ "$mode" == cooldown ]]; then
@@ -100,6 +109,14 @@ load cue_reacquire_helper
   [ "$status" -eq 0 ]
   assert_contains "$output" 'Cue poll failed'
   assert_contains "$output" '__match=-1 rc=1 type= at=0 until=0 seen=0 jq=1'
+}
+
+@test "reacquire accepts the commanded slot but still requires a goto" {
+  run reacquire_poll_probe current
+  [ "$status" -eq 0 ]
+  assert_contains "$output" '__match=0 rc=0 type=person at=1000 until=1010 seen=1 jq=1'
+  assert_contains "$output" '__no_goto=0'
+  assert_not_contains "$output" '(already there)'
 }
 
 @test "lost track interrupts motion hold through the existing cued and resume path" {

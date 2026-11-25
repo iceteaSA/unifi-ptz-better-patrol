@@ -208,6 +208,63 @@ _patrol_wait_for_camera_settle() {
   done
 }
 
+# Some firmware omits tracking flags for the PTZ's own smart events.
+# Wait here so neither failed-goto caller can advance during that activity.
+# Episode state uses caller scope and survives retries until an empty poll.
+# Returns 1 after a hold: the position is stale, so the caller checks it again
+# before any retry.
+_patrol_hold_own_smart_event() {
+  local poll_iv=${1:-5} now types poll_error held=0
+  while true; do
+    printf -v now '%(%s)T' -1
+    types=""; poll_error=0
+    api_get "/events?start=$(( (now - 120) * 1000 ))&end=$(( now * 1000 ))&types=smartDetectZone&cameras=$cam_id"
+    if [[ "$_LAST_HTTP_CODE" != 200 ]]; then
+      poll_error=1
+    elif [[ "$_LAST_BODY" != '[]' ]]; then
+      types=$(jq -rs --arg self "$cam_id" --argjson now "$(( now * 1000 ))" '
+        if length != 1 then error("invalid events") else .[0] end
+        | if type != "array" then error("invalid events") else . end
+        | map(select(type == "object" and .camera == $self and has("end"))
+          | select(.end == null or ((.end | type) == "number" and .end >= $now - 10000 and .end <= $now)))
+        | if length == 0 then empty else
+            [.[].smartDetectTypes[]? | select(type == "string" and length > 0)] | unique
+            | if length == 0 then "unknown" else join(",") end
+          end
+      ' <<< "$_LAST_BODY" 2>/dev/null) || poll_error=1
+    fi
+    if (( poll_error )); then
+      if (( own_event_poll_failed == 0 )); then
+        log "$cam_name" "warn" "Own smart event check failed (HTTP $_LAST_HTTP_CODE, curl rc $_LAST_CURL_RC) — keeping goto retry behaviour"
+      fi
+      own_event_poll_failed=1
+      return "$held"
+    fi
+    own_event_poll_failed=0
+    if [[ -z "$types" ]]; then
+      own_event_since=0
+      own_event_capped=0
+      return "$held"
+    fi
+    printf -v now '%(%s)T' -1
+    if (( own_event_since == 0 )); then
+      own_event_since=$now
+      log "$cam_name" "info" "Goto target not acquired — own smart event ($types) open; holding instead of re-issuing"
+    fi
+    if (( max_smart_wait > 0 && now - own_event_since >= max_smart_wait )); then
+      if (( own_event_capped == 0 )); then
+        log "$cam_name" "warn" "Max smart wait (${max_smart_wait}s) hit on own smart event — resuming goto retries"
+      fi
+      own_event_capped=1
+      return "$held"
+    fi
+    held=1
+    _patrol_status_tick holding_activity "$now"
+    sleep "$poll_iv"
+    api_ensure_auth
+  done
+}
+
 # Re-issue a goto whose target has not been acquired. The retry count is
 # caller-scoped so the patrol can advance after the bounded limit instead of
 # entering a hold loop.
@@ -609,14 +666,41 @@ _patrol_parse_cues() {
   return 0
 }
 
+# Cue completion and pending-cue expiry must clear the same caller-scope state.
+_patrol_end_cue_hold() {
+  cue_in_progress=0
+  status_idle_state=patrolling
+  status_cue_camera=""
+  log "$cam_name" "info" "Cue hold ended"
+  if [[ "${presets[$idx]}" == "$cue_slot" ]]; then
+    log "$cam_name" "debug" "Skipping slot $cue_slot — the cue just held it"
+    idx=$(( (idx + 1) % ${#presets[@]} ))
+    step_repeated=0
+  fi
+}
+
+# The two priority passes can reject a pair before the other pass accepts it.
+# Emit only the final reason, not an intermediate priority rejection.
+_patrol_log_cue_skips() {
+  (( _LOG_LEVEL >= 3 )) || return 0
+  local key i j
+  for key in "${!cue_skip_reasons[@]}"; do
+    i=${key%%:*}; j=${key#*:}
+    log "$cam_name" "debug" "Cue skip entry=$i (${cue_names[$i]}) reason=${cue_skip_reasons[$key]} ${event_debug[$j]}"
+  done
+}
+
 # Reads the caller's cue arrays and last_commanded_slot. Writes cue_seen,
 # cue_pending, cue_match, cue_matched_at, cue_until and cue_poll_failed.
 # A poll error must not hold patrol.
 _patrol_poll_cues() {
   local reacquire=${1:-0}
-  local now cutoff recent_cutoff id src start zones now_zones types rows i j etype zone_id zone_match priority matched_zone key
+  local now cutoff recent_cutoff id src start zones now_zones types rows i j etype zone_id zone_match priority matched_zone key snapshot
+  local debug=$(( _LOG_LEVEL >= 3 ))
   local poll_error=0
-  local -a event_cameras=() event_types=() event_ids=() event_starts=() event_zones=() event_now_zones=() tokens=() zone_tokens=()
+  local -a event_cameras=() event_types=() event_ids=() event_starts=() event_zones=() event_now_zones=() tokens=() zone_tokens=() event_debug=()
+  local -A cue_skip_reasons=()
+  cue_no_goto=0
   (( reacquire )) || cue_pending=-1
   [[ -n "${cue_query:-}" ]] || return 1
   printf -v now '%(%s)T' -1
@@ -625,12 +709,11 @@ _patrol_poll_cues() {
     start=${cue_seen[$id]}
     if (( start < cutoff )); then unset 'cue_seen[$id]'; fi
   done
-  (( reacquire )) || cutoff=$(( (now - 15) * 1000 ))
   api_get "/events?start=$cutoff&end=$(( now * 1000 ))&types=smartDetectZone$cue_query"
   if [[ "$_LAST_HTTP_CODE" != 200 ]]; then
     poll_error=1
   elif [[ "$_LAST_BODY" != '[]' ]]; then
-    rows=$(jq -rs '
+    rows=$(jq -rs --argjson debug "$debug" '
       if length != 1 then error("invalid events") else .[0] end
       | if type != "array" then error("invalid events") else .[] end
       | select(type == "object")
@@ -639,6 +722,7 @@ _patrol_poll_cues() {
         and (.start | floor) == .start and (.smartDetectTypes | type) == "array")
       | (.metadata.zonesStatus | if type == "object" then to_entries else [] end) as $zones
       | [(.id | tojson), (.camera | tojson), (.start | tostring),
+          (if $debug == 1 then "event=\(.id[0:8]) types=\(.smartDetectTypes | tojson) zonesStatus=\($zones | map(.key + ":" + (.value.status | tostring)) | join(",") | tojson)" else "-" end),
           ($zones | map(select((.value | type) == "object" and .value.status != "none") | .key) | tojson),
           ($zones | map(select((.value | type) == "object"
             and (.value.status == "enter" or .value.status == "moving")) | .key) | tojson)]
@@ -660,34 +744,51 @@ _patrol_poll_cues() {
   [[ "$_LAST_BODY" != '[]' ]] || return 1
   printf -v now '%(%s)T' -1
   recent_cutoff=$(( (now - 15) * 1000 ))
-  cutoff=$recent_cutoff
-  (( reacquire == 0 )) || cutoff=$(( (now - 120) * 1000 ))
-  while IFS=$'\t' read -r id src start zones now_zones types; do
+  cutoff=$(( (now - 120) * 1000 ))
+  while IFS=$'\t' read -r id src start snapshot zones now_zones types; do
     [[ -n "$id" && -n "$types" ]] || continue
     [[ "$start" =~ ^[0-9]+$ ]] || continue
-    (( start >= cutoff && start <= now * 1000 )) || continue
     event_cameras+=("$src")
     event_types+=("$types")
     event_ids+=("$id")
     event_starts+=("$start")
     event_zones+=("$zones")
     event_now_zones+=("$now_zones")
+    event_debug+=("$snapshot")
   done <<< "$rows"
   # Current zone presence has priority over a recent event with another status.
-  for (( priority=reacquire; priority>=0; priority-- )); do
+  for (( priority=1; priority>=0; priority-- )); do
   for (( i=0; i<${#cue_slots[@]}; i++ )); do
-    (( now >= cue_until[i] )) || continue
-    [[ "${cue_slots[$i]}" != "$last_commanded_slot" ]] || continue
     for (( j=0; j<${#event_cameras[@]}; j++ )); do
-      [[ "${event_cameras[$j]}" == "\"${cue_camera_ids[$i]}\"" ]] || continue
+      if (( now < cue_until[i] )); then
+        (( debug == 0 )) || cue_skip_reasons["$i:$j"]=cooldown
+        continue
+      fi
+      if [[ "${event_cameras[$j]}" != "\"${cue_camera_ids[$i]}\"" ]]; then
+        (( debug == 0 )) || cue_skip_reasons["$i:$j"]=camera
+        continue
+      fi
       key="$i:${event_ids[$j]}"
-      [[ -z "${cue_seen[$key]+x}" ]] || continue
+      if [[ -n "${cue_seen[$key]+x}" ]]; then
+        (( debug == 0 )) || cue_skip_reasons["$i:$j"]=seen
+        continue
+      fi
+      if (( event_starts[j] < cutoff || event_starts[j] > now * 1000 )); then
+        (( debug == 0 )) || cue_skip_reasons["$i:$j"]=window
+        continue
+      fi
       zones=${event_zones[$j]}
       if (( priority )); then
         zones=${event_now_zones[$j]}
-        [[ "$zones" != '[]' ]] || continue
+        if [[ "$zones" == '[]' ]]; then
+          if (( debug && event_starts[j] < recent_cutoff )); then cue_skip_reasons["$i:$j"]=window; fi
+          continue
+        fi
       else
-        (( event_starts[j] >= recent_cutoff )) || continue
+        if (( event_starts[j] < recent_cutoff )); then
+          if (( debug )) && [[ "${cue_skip_reasons["$i:$j"]:-}" != type ]]; then cue_skip_reasons["$i:$j"]=window; fi
+          continue
+        fi
       fi
       matched_zone=""
       if [[ -n "${cue_zones[$i]:-}" ]]; then
@@ -700,7 +801,10 @@ _patrol_poll_cues() {
             break
           fi
         done
-        (( zone_match )) || continue
+        if (( zone_match == 0 )); then
+          if (( debug && (priority == 0 || event_starts[j] < recent_cutoff) )); then cue_skip_reasons["$i:$j"]=zone; fi
+          continue
+        fi
       fi
       IFS=$'\t' read -r -a tokens <<< "${event_types[$j]}"
       for etype in "${tokens[@]}"; do
@@ -710,15 +814,31 @@ _patrol_poll_cues() {
           cue_match=${etype:1:${#etype}-2}
           cue_matched_at=$now
           cue_until[i]=$(( now + cue_cooldowns[i] ))
+          if (( reacquire == 0 )) && [[ "${cue_slots[$i]}" == "$last_commanded_slot" ]]; then
+            cue_no_goto=1
+          fi
           local prefix=""
           (( reacquire == 0 )) || prefix="Tracking lost — "
-          log "$cam_name" "info" "${prefix}Cue: ${cue_names[$i]} $cue_match$matched_zone → slot ${cue_slots[$i]}"
+          local suffix=""
+          if (( cue_no_goto )); then
+            suffix=" (already there)"
+          elif (( ${cue_in_progress:-0} )) && [[ "${cue_slots[$i]}" != "${cue_slot:--1}" ]]; then
+            suffix=" (pre-empts $status_cue_camera)"
+          fi
+          log "$cam_name" "info" "${prefix}Cue: ${cue_names[$i]} $cue_match$matched_zone → slot ${cue_slots[$i]}$suffix"
+          if (( debug )); then
+            unset 'cue_skip_reasons[$i:$j]'
+            _patrol_log_cue_skips
+            log "$cam_name" "debug" "Cue fired entry=$i ${event_debug[$j]}"
+          fi
           return 0
         fi
       done
+      (( debug == 0 )) || cue_skip_reasons["$i:$j"]="type"
     done
   done
   done
+  (( debug == 0 )) || _patrol_log_cue_skips
   return 1
 }
 
@@ -741,12 +861,13 @@ _patrol_status_tick() {
   if [[ "$next_state" != "$status_state" ]]; then
     status_state=$next_state
     status_since=$now
-  elif (( status_heartbeat_seconds == 0 || now - status_last_post < status_heartbeat_seconds )); then
+  elif [[ "$next_state" != cued || "${status_cue_changed:-0}" == 0 ]] && (( status_heartbeat_seconds == 0 || now - status_last_post < status_heartbeat_seconds )); then
     return 0
   fi
   local cue_camera=""
   [[ "$status_state" != cued ]] || cue_camera=${status_cue_camera:-}
   api_post_status "$cam_id" "$cam_name" "$status_state" "$status_slot" "$status_since" "$now" "$status_version" "$cue_camera"
+  status_cue_changed=0
   status_last_post=$now
 }
 
@@ -1021,7 +1142,7 @@ patrol_camera() {
   fi
 
   local status_state="" status_since=0 status_last_post=0 status_slot=""
-  local status_idle_state=patrolling status_cue_camera=""
+  local status_idle_state=patrolling status_cue_camera="" status_cue_changed=0
   local status_heartbeat_seconds=300 status_version=""
   if [[ -n "$_STATUS_WEBHOOK_URL" ]]; then
     status_heartbeat_seconds=$(jq -r '
@@ -1196,7 +1317,7 @@ patrol_camera() {
   local -A cue_zone_labels=()
   local -A cue_seen=()
   local cue_query="" cue_pending=-1 cue_match="" cue_in_progress=0 cue_resume=0 cue_hold=0
-  local cue_matched_at=0 cue_poll_failed=0
+  local cue_matched_at=0 cue_poll_failed=0 cue_no_goto=0
   # Failed-goto exhaustion clears last_commanded_slot. Retain the cue target.
   local cue_slot=-1
   _patrol_parse_cues
@@ -1243,6 +1364,7 @@ patrol_camera() {
   local acquisition_streak=0
   local goto_retry_count=0
   local goto_retry_limit=2
+  local own_event_since=0 own_event_poll_failed=0 own_event_capped=0
   local external_control_until=0
   local hold_home_pan=-1 hold_home_tilt=-1 hold_home_zoom=-1 hold_home_streak=0
   local schedule_paused=0
@@ -1261,16 +1383,8 @@ patrol_camera() {
   fi
 
   while true; do
-    if (( cue_in_progress )); then
-      cue_in_progress=0
-      status_idle_state=patrolling
-      status_cue_camera=""
-      log "$cam_name" "info" "Cue hold ended"
-      if [[ "${presets[$idx]}" == "$cue_slot" ]]; then
-        log "$cam_name" "debug" "Skipping slot $cue_slot — the cue just held it"
-        idx=$(( (idx + 1) % ${#presets[@]} ))
-        step_repeated=0
-      fi
+    if (( cue_in_progress && cue_pending < 0 )); then
+      _patrol_end_cue_hold
     fi
     api_ensure_auth
 
@@ -1295,6 +1409,7 @@ patrol_camera() {
           tracking_enabled=0
         fi
         schedule_paused=1
+        cue_no_goto=0
         expected_pan=-1; expected_tilt=-1; expected_zoom=-1
         acquisition_state="acquiring"
         acquisition_streak=0
@@ -1366,6 +1481,7 @@ patrol_camera() {
       acquisition_state="acquiring"
       acquisition_streak=0
       external_control_until=0
+      cue_no_goto=0
       top_drift_attempts=0
       top_drift_streak=0
       top_previous_drift=0
@@ -1404,6 +1520,7 @@ patrol_camera() {
     fi
     _patrol_refresh_camera_name
     if (( _LAST_TRACKING_ACTIVE == 1 )); then
+      cue_no_goto=0
       expected_pan=-1; expected_tilt=-1; expected_zoom=-1
       acquisition_state="acquiring"
       acquisition_streak=0
@@ -1462,6 +1579,10 @@ patrol_camera() {
         top_previous_drift=0
         # A pending cue replaces the old target. A completed cue must not restart.
         if (( last_commanded_slot >= 0 && cue_pending < 0 && cue_resume == 0 )); then
+          # After a hold, check the position again before any retry.
+          if ! _patrol_hold_own_smart_event 5; then
+            continue
+          fi
           if _patrol_reissue_failed_goto "$cam_id" "$cam_name" "$last_commanded_slot" "$goto_retry_limit"; then
             sleep 5
             continue
@@ -1555,7 +1676,7 @@ patrol_camera() {
       (( unknown_seconds == 0 )) || unknown_info=", unknown ${unknown_seconds}s"
       log "$cam_name" "info" "Activity hold ended after ${waited}s (tracking ${tracking_seconds}s, smart ${smart_seconds}s, motion ${motion_seconds}s${unknown_info})"
     fi
-    if (( activity_active == 0 )); then
+    if (( activity_active == 0 && cue_in_progress == 0 )); then
       _patrol_status_tick patrolling
     fi
     if (( cue_pending >= 0 )); then
@@ -1565,6 +1686,10 @@ patrol_camera() {
         cue_pending=-1
         cue_resume=1
         log "$cam_name" "info" "Cue dropped — ${cue_age}s old"
+        if (( cue_in_progress )); then
+          _patrol_end_cue_hold
+          slot=${presets[$idx]}
+        fi
       fi
     fi
     # Dynamic auto-tracking: tracking may have moved the camera, so reset
@@ -1593,6 +1718,7 @@ patrol_camera() {
       cue_slot=$slot
       cue_hold=${cue_holds[$cue_pending]}
       status_cue_camera=${cue_names[$cue_pending]}
+      status_cue_changed=1
       status_idle_state=cued
       cue_in_progress=1
       cue_resume=1
@@ -1606,9 +1732,16 @@ patrol_camera() {
       _patrol_wait_for_camera_settle "$cam_id" "$cam_name" 30 || true
       startup_settle_pending=0
     fi
-    local code
-    api_post_with_retry "/cameras/$cam_id/ptz/goto/$slot" 2 3 >/dev/null || true
-    code="$_LAST_HTTP_CODE"
+    local code goto_skipped=0
+    # The skip flag must not outlive its cue, or a real goto loses its target state.
+    if (( cue_in_progress && cue_no_goto )); then
+      code=200
+      goto_skipped=1
+    else
+      cue_no_goto=0
+      api_post_with_retry "/cameras/$cam_id/ptz/goto/$slot" 2 3 >/dev/null || true
+      code="$_LAST_HTTP_CODE"
+    fi
 
     case "$code" in
       200|204)
@@ -1624,20 +1757,27 @@ patrol_camera() {
         poll_interval_s=$(( slot_dwell / 3 ))
         (( poll_interval_s > 5 )) && poll_interval_s=5
         (( poll_interval_s < 2 )) && poll_interval_s=2
-        last_goto_ts=$(date +%s)
-        acquisition_state="acquiring"
-        acquisition_streak=0
+        if (( goto_skipped == 0 )); then
+          last_goto_ts=$(date +%s)
+          acquisition_state="acquiring"
+          acquisition_streak=0
+        fi
         top_drift_attempts=0
         top_drift_streak=0
         top_previous_drift=0
         # Set expected position from preset data.  is_externally_controlled()
         # compares these against the live /ptz/position (motor steps), so the
         # coordinate system matches directly — no ISP zoom scaling needed.
-        IFS=$'\t' read -r expected_pan expected_tilt expected_zoom <<< "$(get_preset_ptz "$preset_positions" "$slot")"
+        if (( goto_skipped == 0 )); then
+          IFS=$'\t' read -r expected_pan expected_tilt expected_zoom <<< "$(get_preset_ptz "$preset_positions" "$slot")"
+          goto_retry_count=0
+          own_event_since=0
+          own_event_capped=0
+          log "$cam_name" "info" "→ Slot $slot [HTTP $code]"
+        fi
         last_commanded_slot=$slot
         status_slot=$slot
-        goto_retry_count=0
-        log "$cam_name" "info" "→ Slot $slot [HTTP $code]"
+        cue_no_goto=0
         (( cue_in_progress == 0 )) || _patrol_status_tick cued
         ;;
       404)
@@ -1768,6 +1908,10 @@ patrol_camera() {
           dwell_drift_attempts=0
           dwell_drift_streak=0
           dwell_previous_drift=0
+          # After a hold, check the position again before any retry.
+          if ! _patrol_hold_own_smart_event "$poll_interval_s"; then
+            continue
+          fi
           if _patrol_reissue_failed_goto "$cam_id" "$cam_name" "$slot" "$goto_retry_limit"; then
             continue
           fi
@@ -1791,7 +1935,7 @@ patrol_camera() {
         dwell_interrupted=1
         break
       fi
-      if (( cue_in_progress == 0 && _LAST_ACTIVITY_KNOWN == 1 && _LAST_TRACKING_ACTIVE == 0 && dwell_drift_attempts == 0 )) && [[ -n "$cue_query" ]]; then
+      if (( _LAST_ACTIVITY_KNOWN == 1 && _LAST_TRACKING_ACTIVE == 0 && dwell_drift_attempts == 0 )) && [[ -n "$cue_query" ]]; then
         if _patrol_poll_cues; then break; fi
       fi
     done

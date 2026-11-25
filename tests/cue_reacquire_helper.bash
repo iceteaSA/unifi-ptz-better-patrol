@@ -33,6 +33,7 @@ reacquire_fixture() {
 
 reacquire_poll_probe() {
   local mode=$1
+  local _LOG_LEVEL=${REACQUIRE_DEBUG:-2}
   local -x cam_id=cam1 cam_name=Overwatch last_commanded_slot=0
   local cam_config='{"cues":[{"camera_id":"fixed1","slot":4,"zones":["Past pole"],"cooldown_seconds":10},{"camera_id":"fixed1","slot":2,"zones":["Near side"],"cooldown_seconds":10}]}'
   local -x cam_discovery_json='{"presets":[{"slot":0},{"slot":4},{"slot":2}]}'
@@ -46,7 +47,8 @@ reacquire_poll_probe() {
   CUE_BODY=$(reacquire_fixture)
   case "$mode" in
     entries) reacquire=0; CUE_BODY=$(reacquire_fixture 999000); cam_config=${cam_config//10/0} ;;
-    normal-old) reacquire=0 ;;
+    normal-old) reacquire=0; CUE_BODY=$(reacquire_fixture 982000); CUE_BODY=$(command jq -c '.[0].metadata.zonesStatus["2"].status="leave" | .[0].metadata.zonesStatus["3"].status="enter"' <<< "$CUE_BODY") ;;
+    normal-leave) reacquire=0; CUE_BODY=$(command jq -c '.[0].metadata.zonesStatus["2"].status="leave"' <<< "$CUE_BODY") ;;
     leave) CUE_BODY=$(command jq -c '.[0].metadata.zonesStatus["2"].status="leave"' <<< "$CUE_BODY") ;;
     moving) CUE_BODY=$(command jq -c '.[0].metadata.zonesStatus["2"].status="moving"' <<< "$CUE_BODY") ;;
     recent-leave) CUE_BODY=$(reacquire_fixture 999000); CUE_BODY=$(command jq -c '.[0].metadata.zonesStatus["2"].status="leave"' <<< "$CUE_BODY") ;;
@@ -59,11 +61,14 @@ reacquire_poll_probe() {
     stale) CUE_BODY=$(reacquire_fixture 879000) ;;
     future) CUE_BODY=$(reacquire_fixture 1001000) ;;
     types) CUE_BODY=$(command jq -c '.[0].smartDetectTypes=["animal"]' <<< "$CUE_BODY") ;;
+    camera) CUE_BODY=$(command jq -c '.[0].camera="other"' <<< "$CUE_BODY") ;;
+    zone) CUE_BODY=$(reacquire_fixture 999000); CUE_BODY=$(command jq -c '.[0].metadata.zonesStatus["2"].status="none"' <<< "$CUE_BODY") ;;
     documents) CUE_BODY+=$'\n[]' ;;
   esac
   _patrol_parse_cues
   [[ "$mode" != cooldown ]] || cue_until[0]=1001
   [[ "$mode" != current ]] || last_commanded_slot=4
+  if [[ "$mode" == seen ]]; then cue_seen['0:"eeeeeeee-eeee-eeee-eeee-eeeeeeeeeee1"']=970000; fi
   # Count only poll processes, not fixture preparation or startup validation.
   REACQUIRE_COUNTS="$BATS_TEST_TMPDIR/poll-jq"
   : > "$REACQUIRE_COUNTS"
@@ -73,6 +78,7 @@ reacquire_poll_probe() {
   local -a jq_calls=()
   mapfile -t jq_calls < "$REACQUIRE_COUNTS"
   printf '__match=%s rc=%s type=%s at=%s until=%s seen=%s jq=%s\n' "$cue_pending" "$rc" "$cue_match" "$cue_matched_at" "${cue_until[0]}" "${#cue_seen[@]}" "${#jq_calls[@]}"
+  printf '__no_goto=%s\n' "$cue_no_goto"
   if [[ "$mode" == entries ]]; then
     CUE_NOW=1001
     _patrol_poll_cues || true

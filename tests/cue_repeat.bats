@@ -21,7 +21,7 @@ load cue_test_helper
   assert_contains "$output" '__goto=4 now=1020 idx=1'
 }
 
-@test "first early cue interruption still repeats with continuous fresh events" {
+@test "first early cue interruption still repeats with fresh events at each path step" {
   run cue_integration_probe '{"dwell_seconds":20,"ptz_settle_seconds":0,"cues":[{"camera_id":"fixed1","slot":2,"hold_seconds":5,"cooldown_seconds":0}]}' repeat-stream 3
   [ "$status" -eq 0 ]
   assert_contains "$output" '__goto=2 now=1005 idx=0'

@@ -37,7 +37,7 @@ api_get() {
   _LAST_HTTP_CODE=$CUE_CODE
   if [[ "$1" == /events* ]]; then
     CUE_POLLS=$(( CUE_POLLS + 1 ))
-    if (( ${cue_in_progress:-0} != 0 || ${activity_active:-0} != 0 || ${_LAST_TRACKING_ACTIVE:-0} != 0 || ${_LAST_ACTIVITY_KNOWN:-1} != 1 )); then
+    if (( ${activity_active:-0} != 0 || ${_LAST_TRACKING_ACTIVE:-0} != 0 || ${_LAST_ACTIVITY_KNOWN:-1} != 1 )); then
       printf '__forbidden_cue_poll\n'
     fi
     _LAST_BODY=$CUE_BODY
@@ -56,6 +56,7 @@ api_get() {
       _LAST_BODY=$(command jq -c --arg id "$event_id" --argjson start "$(( FIELD_NOW * 1000 ))" '
         .[0:1] | .[0].id=$id | .[0].start=$start
       ' <<< "$CUE_BODY")
+      if (( cue_in_progress )); then _LAST_BODY='[]'; fi
     fi
     CUE_NOW=$(( CUE_NOW + CUE_FETCH_ADVANCE ))
   else
@@ -80,7 +81,7 @@ cue_poll_probe() {
   local -A cue_seen=()
   CUE_BODY=$(cue_fixture)
   case "$mode" in
-    current) last_commanded_slot=4; CUE_BODY=$(jq -c '.[0:1]' <<< "$CUE_BODY") ;;
+    current) last_commanded_slot=4; cue_cooldowns=(10 10); CUE_BODY=$(jq -c '.[0:1]' <<< "$CUE_BODY") ;;
     order) cue_camera_ids=(fixed2 fixed1); cue_types=($'\t"animal"\t' $'\t"person"\t') ;;
     cooldown) cue_cooldowns=(120 120); CUE_BODY=$(jq -c '.[0:1]' <<< "$CUE_BODY") ;;
     failure) CUE_CODE=503 ;;

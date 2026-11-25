@@ -107,9 +107,13 @@ discover.sh   -> api.sh
 - `/ptz/position` returns `.steps.{pan,tilt,zoom}` in motor steps, the *same* coordinate
   system as preset `.ptz.{pan,tilt,zoom}`. No ISP/zoom scaling conversion is needed.
 - For cue events, use repeated `cameras=` parameters and the `[]` fast path with no `jq` on an empty poll.
-- Keep normal cue polls at a 15-second event-start window. Use 120 seconds only for re-acquire polls after tracking in the current activity hold. Require readable PTZ state with no tracking or smart detection before those polls.
-- Match filtered cue zones only with status other than `none`. For re-acquire events older than 15 seconds, require `enter` or `moving` in a configured zone, or any zone for an unfiltered entry. Prefer current presence, then config order.
+- Read a 120-second event-start window in every cue poll. Require readable PTZ state with no tracking or smart detection before re-acquire polls after tracking in the current activity hold.
+- Match `enter` or `moving` in a configured zone, or any zone for an unfiltered entry. Also accept events from the last 15 seconds under the status-other-than-`none` rule. Prefer current presence, then config order.
 - Keep cue seen state per entry and event, and prune it after the 120-second event-start window. Keep cooldown per entry. Use the existing cue goto and resume path after a re-acquire hit.
+- Poll cues during cue holds with the usual activity, readability, and drift gates. On pre-emption, keep the selected resume step and the `cued` status until the last cue hold ends.
+- Accept a normal cue for `last_commanded_slot` without a goto. Mark it seen, start its cooldown, and restart its cue hold. Keep the motor settle clock. Send gotos for re-acquire and home-dwell cues.
+- Build cue diagnostic snapshots only at debug level, in the existing event parser. Keep the empty-event path free of jq processes.
+- Check the PTZ's own smart events before a failed-goto retry at both call sites. Hold on open events or events that ended in the last 10 seconds, including face-only events. Apply `max_smart_wait` across retries in the same episode. On a request error, warn once and keep the retry path. Make no event request without a pending retry.
 
 ## Behavioral invariants
 

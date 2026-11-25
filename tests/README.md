@@ -90,6 +90,12 @@ camera, and a missing, `null` or `true` value patrols it.
 
 `field_test_helper.bash` supplies virtual time and patrol API stubs for field-feature tests.
 
+`cue_arbitration.bats` checks cue-hold pre-emption, activity gates, the resume step, and already-there holds without a goto. It uses `cue_arbitration_helper.bash` for virtual time and real-shaped events.
+
+`cue_debug.bats` checks cue skip reasons, event snapshots, and the one-jq budget at info and debug levels.
+
+`own_smart_event.bats` checks failed-goto holds for the PTZ's own events, face-only events, recent ends, request errors, the hold cap, and both retry call sites. It uses `own_smart_event_helper.bash` for virtual time and request and jq counters.
+
 `homeview_test_helper.bash` supplies HomeView responses and counts home and position reads.
 
 ### Provenance — read this before trusting the fixture
