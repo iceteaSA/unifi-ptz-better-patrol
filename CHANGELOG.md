@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.9.0](https://github.com/iceteaSA/unifi-ptz-better-patrol/compare/v1.8.0...v1.9.0) (2026-11-27)
+
+
+### Features
+
+* hand off a pole crossing to a sector preset ([b90a1e2](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/b90a1e2260ed6b147c0844fa1e92dcd603e2f2e5))
+* hand off a pole crossing to a sector preset ([fd047d7](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/fd047d7373d29781353a5c4ff55b2944b5554df1))
+* sample PTZ position after tracking for nadir hand-off ([8abe883](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/8abe883ab175f246e6a5937dd12b17e52ab2a0a0))
+
+
+### Tests
+
+* pin the nadir cutoff clear when a pre-empting cue expires ([c0e759f](https://github.com/iceteaSA/unifi-ptz-better-patrol/commit/c0e759f334e0a8a36a6af96ea5255e60de581099))
+
 ## [1.8.0](https://github.com/iceteaSA/unifi-ptz-better-patrol/compare/v1.7.0...v1.8.0) (2026-11-25)
 
 
