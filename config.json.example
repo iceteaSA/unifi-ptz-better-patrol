@@ -39,7 +39,7 @@
       "manual_control_hold_seconds": 60,
       "preset_slots": [0, 1, 3],
       "_note_nadir_handoff": "Per camera only. An empty sectors array logs steep crossings without a goto. hold_seconds defaults to 20. Pan sectors can wrap past zero.",
-      "nadir_handoff": {"tilt_min": 15800, "hold_seconds": 20, "sectors": []},
+      "nadir_handoff": {"tilt_min": 15800, "hold_seconds": 20, "sectors": [{"pan_min": 34000, "pan_max": 1000, "slot": 3}]},
       "_note_cues": "A fixed camera smart detection can send this PTZ to a preset. Replace camera_id with 1-64 letters or digits. Cues do not interrupt activity, manual control, or another cue hold. Empty or absent cues disables cue polls.",
       "cues": [
         {"camera_id": "FIXEDCAMERAID", "slot": 0, "types": ["person"], "zones": ["Trail mouth"], "hold_seconds": 30, "cooldown_seconds": 120}

@@ -98,7 +98,7 @@ camera, and a missing, `null` or `true` value patrols it.
 
 `homeview_test_helper.bash` supplies HomeView responses and counts home and position reads.
 
-`nadir_handoff.bats` checks startup validation, process counts, one-second sampling after tracking, HomeView exclusion, failed reads, crossing logs, and once-per-hold decisions. It uses `nadir_handoff_helper.bash` for virtual time and file-backed counters.
+`nadir_handoff.bats` checks startup validation, process counts, one-second sampling after tracking, HomeView exclusion, read errors, crossing logs, and one decision per tracking stretch. It also checks sector selection, cue priority, event-time filters, cued status, patrol resume, and tracking gaps in one activity hold. It uses `nadir_handoff_helper.bash` for virtual time and file-backed counters.
 
 ### Provenance — read this before trusting the fixture
 

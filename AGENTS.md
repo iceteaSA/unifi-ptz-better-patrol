@@ -137,10 +137,13 @@ Break these and the camera ends up in a wrong state that nothing corrects.
   thresholds of the HomeView on all axes, it is not manual control. The callers then clear
   `expected_pan/tilt/zoom`, so the dwell stops position reads until the next goto.
   If the home read fails, the manual-control hold rules stay.
-- Keep `nadir_handoff` per camera; ignore it in `defaults`. Validate it with the cue preset-slot set at startup and disable only this feature on invalid settings.
-- After a tracking poll, sample nadir position with five one-second sleeps and plain position requests per hold block. Keep the five-second activity charge. Without this feature, keep the original sleep and process counts.
-- Read HomeView once per sampling hold. Skip samples within 200/200/30 steps of HomeView; retain the previous sample on read errors. Limit the sample ring to five entries and clear it at each activity hold.
-- Make at most one nadir decision per activity hold, before re-acquire. Require readable state without smart detection or tracking, a sample at most 15 seconds old, and sufficient tilt.
+- Keep `nadir_handoff` only in camera overrides. Validate with the cue slot set at startup. Invalid settings disable only nadir hand-off.
+- After a tracking poll, use five one-second sleeps and plain position reads for each 5s charge. Keep sleep/request/jq counts unchanged without nadir settings.
+- Read HomeView one time for each hold. Skip samples in its 200/200/30-step limits. Keep the last sample on read errors. Limit the ring to five samples.
+- Decide before re-acquire, with readable state, no smart detection or tracking, sufficient tilt, and a sample age of 15 seconds or less. Set the decision flag to zero on tracking polls so a tracking gap cannot suppress the crossing.
+- Choose the first containing sector, with endpoints and wrap through zero. Use the cue goto/acquisition/retry/status/resume path. Send gotos also for the last commanded slot.
+- Keep the internal cue out of event matching, skip logs, startup lists and queries. Without real cues, keep event polls off.
+- Accept crossing cues only from after the decision second. Clear the cutoff on hold end, pending-cue expiry or normal-cue acceptance. Clear sample/decision state at each activity hold.
 - **`_patrol_home_dwell` mutates caller-scope variables via bash dynamic scoping**
   (`last_goto_ts`, `expected_pan/tilt/zoom`, `acquisition_state`, `acquisition_streak`,
   `tracking_enabled`, `external_control_until`, `cam_name`, `protect_name`).
