@@ -137,7 +137,7 @@ get_camera_config() {
 }
 
 # Read installed version metadata without spawning external processes.
-PTZ_PATROL_VERSION="1.8.0" # x-release-please-version
+PTZ_PATROL_VERSION="1.9.0" # x-release-please-version
 get_install_version() {
   local version=$PTZ_PATROL_VERSION ref=unknown commit=unknown dirty=false key value
   if [[ -r "$SCRIPT_DIR/VERSION" ]]; then
