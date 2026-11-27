@@ -137,6 +137,10 @@ Break these and the camera ends up in a wrong state that nothing corrects.
   thresholds of the HomeView on all axes, it is not manual control. The callers then clear
   `expected_pan/tilt/zoom`, so the dwell stops position reads until the next goto.
   If the home read fails, the manual-control hold rules stay.
+- Keep `nadir_handoff` per camera; ignore it in `defaults`. Validate it with the cue preset-slot set at startup and disable only this feature on invalid settings.
+- After a tracking poll, sample nadir position with five one-second sleeps and plain position requests per hold block. Keep the five-second activity charge. Without this feature, keep the original sleep and process counts.
+- Read HomeView once per sampling hold. Skip samples within 200/200/30 steps of HomeView; retain the previous sample on read errors. Limit the sample ring to five entries and clear it at each activity hold.
+- Make at most one nadir decision per activity hold, before re-acquire. Require readable state without smart detection or tracking, a sample at most 15 seconds old, and sufficient tilt.
 - **`_patrol_home_dwell` mutates caller-scope variables via bash dynamic scoping**
   (`last_goto_ts`, `expected_pan/tilt/zoom`, `acquisition_state`, `acquisition_streak`,
   `tracking_enabled`, `external_control_until`, `cam_name`, `protect_name`).

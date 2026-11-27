@@ -261,6 +261,32 @@ The first event request error logs one warning with the HTTP code and curl exit 
 
 At debug level, `Cue skip` lines give the entry, short event id, event types, and a zone snapshot as `id:status` pairs. The reasons are `cooldown`, `seen`, `camera`, `type`, `zone`, and `window` (too old without current presence, or outside the 120-second window). `Cue fired` gives the same snapshot for a match. Info level adds no lines or jq processes for these diagnostics.
 
+### Nadir Hand-Off
+
+Set `camera_overrides.<ptz id>.nadir_handoff` for a trail that passes below the PTZ. Do not put this block in `defaults`.
+
+```json
+"nadir_handoff": {
+  "tilt_min": 15800,
+  "hold_seconds": 20,
+  "sectors": []
+}
+```
+
+`tilt_min` must be a non-negative integer in motor steps. Higher tilt points further down on the AI PTZ Industrial. `hold_seconds` must be an integer of at least 5. Its default is 20. Each sector needs non-negative integer `pan_min` and `pan_max` values and a preset `slot` from this PTZ. A range with `pan_min > pan_max` passes through zero.
+
+Invalid settings give one warning and disable only nadir hand-off.
+
+An empty `sectors` array selects logging-only mode. After a tracking poll, patrol samples position each second during the activity hold. It reads HomeView once and ignores positions within 200 pan, 200 tilt, and 30 zoom steps of it. A failed position read keeps the last sample. Without the block, patrol keeps its five-second sleep and makes no additional requests.
+
+Patrol makes the decision at the first readable poll without smart detection or tracking. A sample at most 15 seconds old with tilt at or above `tilt_min` logs a crossing. Cue re-acquire still runs. Debug output includes the last five samples and the reason for a skipped decision.
+
+```text
+Nadir hand-off: tilt_min=15800 sectors=0 (logging only)
+Tracking ended at pan 18362 tilt 10914 zoom 0 (last tracked pan 35000 tilt 16000 zoom 0 3s earlier)
+Nadir crossing: last pan 35000 tilt 16000 zoom 0 (3s ago) — no sector; using cues
+```
+
 ### Patrol Schedule
 
 By default, patrol runs 24/7. Add a `schedule` block to restrict patrol to specific time windows. This can be set globally in `defaults` or per-camera in `camera_overrides`.

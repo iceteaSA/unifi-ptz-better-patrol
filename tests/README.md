@@ -98,6 +98,8 @@ camera, and a missing, `null` or `true` value patrols it.
 
 `homeview_test_helper.bash` supplies HomeView responses and counts home and position reads.
 
+`nadir_handoff.bats` checks startup validation, process counts, one-second sampling after tracking, HomeView exclusion, failed reads, crossing logs, and once-per-hold decisions. It uses `nadir_handoff_helper.bash` for virtual time and file-backed counters.
+
 ### Provenance — read this before trusting the fixture
 
 A fixture is evidence about one system at one moment, not a permanent fact.

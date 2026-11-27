@@ -105,7 +105,8 @@ discover_cue_lines() {
     def zone($source; $requested):
       ([$source.smartDetectZones[]? | select(($requested | type) == "string" and .name == $requested)][0]
         // [$source.smartDetectZones[]? | select((.id | tostring) == ($requested | tostring))][0]);
-    (if .cues == null then [] else .cues end)
+    (if has("nadir_handoff") then "    nadir_handoff:              \(.nadir_handoff | tojson)" else empty end),
+    ((if .cues == null then [] else .cues end)
     | if type != "array" then "    cues:                       invalid (expected array)"
       elif length == 0 then "    cues:                       none"
       else .[] | if type != "object" then "    cue:                        invalid entry" else
@@ -116,7 +117,7 @@ discover_cue_lines() {
               [.zones[] | . as $requested | zone($source; $requested) as $zone
                 | if $zone == null then "\($requested) [unknown zone]" else ($zone.name // ($zone.id | tostring)) end]
               | join(", ") end) else "" end)
-      end end
+      end end)
   ' <<< "$1"
 }
 
@@ -130,7 +131,9 @@ get_camera_config() {
   defaults=$(cfg '.defaults')
 
   # Merge: overrides win over defaults
-  printf '%s' "$defaults" | jq --slurpfile o <(printf '%s' "$overrides") '. * $o[0]'
+  printf '%s' "$defaults" | jq --slurpfile o <(printf '%s' "$overrides") '
+    del(.nadir_handoff) * $o[0]
+  '
 }
 
 # Read installed version metadata without spawning external processes.
