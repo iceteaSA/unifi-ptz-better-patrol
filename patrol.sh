@@ -570,6 +570,17 @@ _patrol_parse_cues() {
   local -A names=() zone_names=() zone_ids=() zone_labels=() source_ok=()
   local -a requested_zones=()
   while IFS=$'\t' read -r src slot hold cooldown types; do
+    case "$src" in
+      nadir-invalid)
+        log "$cam_name" "warn" "Invalid nadir_handoff — disabling nadir hand-off"
+        continue ;;
+      nadir)
+        nadir_enabled=1; nadir_tilt_min=$slot; nadir_hold=$hold
+        continue ;;
+      nadir-sector)
+        nadir_pan_mins+=("$slot"); nadir_pan_maxs+=("$hold"); nadir_slots+=("$cooldown")
+        continue ;;
+    esac
     if [[ "$src" == zone ]]; then
       requested_zones+=("$slot")
       continue
@@ -641,7 +652,20 @@ _patrol_parse_cues() {
     --slurpfile positions <(printf '%s' "${preset_positions:-[]}") --slurpfile discovery <(printf '%s' "$discovery") '
     def integer: type == "number" and floor == .;
     ([$positions[0][].slot | tostring] + [$discovery[0].presets[]?.slot | tostring]) as $slots
-    | if .cues == null then [] else .cues end
+    | (if has("nadir_handoff") then .nadir_handoff
+        | if type != "object" then "nadir-invalid" else
+          (if has("hold_seconds") then .hold_seconds else 20 end) as $hold
+          | if (.tilt_min | integer and . >= 0) and ($hold | integer and . >= 5)
+            and (.sectors | if type == "array" then all(.[];
+              if type == "object" then
+                (.pan_min | integer and . >= 0) and (.pan_max | integer and . >= 0)
+                and (.slot | integer) and (.slot as $slot | $slots | index($slot | tostring)) != null
+              else false end) else false end)
+            then (["nadir", .tilt_min, $hold] | @tsv),
+              (.sectors[] | ["nadir-sector", .pan_min, .pan_max, .slot] | @tsv)
+            else "nadir-invalid" end
+        end else empty end),
+      (if .cues == null then [] else .cues end
     | if type != "array" then "invalid\t<array>" else
       to_entries[] | .key as $index | .value
       | if type != "object" then "invalid\t\($index)" else
@@ -660,15 +684,92 @@ _patrol_parse_cues() {
             + ($types | reduce .[] as $t ([]; if index($t) == null then . + [$t] else . end) | map(tojson))) | join("\t"))
           else "invalid\t\($index)" end
       end
-    end
+    end)
   ' <<< "$cam_config")
   [[ -z "$info" ]] || log "$cam_name" "info" "Cues: $info"
+  if (( ${nadir_enabled:-0} )); then
+    local nadir_info=""
+    (( ${#nadir_slots[@]} > 0 )) || nadir_info=" (logging only)"
+    log "$cam_name" "info" "Nadir hand-off: tilt_min=$nadir_tilt_min sectors=${#nadir_slots[@]}$nadir_info"
+    if (( ${#nadir_slots[@]} > 0 )); then
+      # An internal entry uses the cue goto and resume path, but never polls events.
+      nadir_cue_index=${#cue_slots[@]}
+      cue_camera_ids+=(""); cue_slots+=(0); cue_types+=(""); cue_zones+=("")
+      cue_holds+=("$nadir_hold"); cue_cooldowns+=(0); cue_until+=(0)
+      cue_names+=("Nadir hand-off")
+    fi
+  fi
   return 0
+}
+
+# These samples use caller scope and expire with the activity hold.
+_patrol_nadir_wait() {
+  local fields pan tilt zoom round dp dt dz
+  if (( nadir_sampling == 0 )); then
+    nadir_sampling=1
+    fields=$(api_get_ptz_home "$cam_id") || fields=""
+    IFS=$'\t' read -r nadir_home_pan nadir_home_tilt nadir_home_zoom <<< "$fields"
+  fi
+  for (( round=0; round<5; round++ )); do
+    sleep 1
+    api_get "/cameras/$cam_id/ptz/position" || continue
+    [[ "$_LAST_HTTP_CODE" == 200 ]] || continue
+    fields=$(jq -ers '
+      if length == 1 then .[0].steps else null end
+      | [.pan, .tilt, .zoom]
+      | if all(.[]; type == "number" and floor == . and . >= 0)
+        then @tsv else empty end
+    ' <<< "$_LAST_BODY" 2>/dev/null) || continue
+    IFS=$'\t' read -r pan tilt zoom <<< "$fields"
+    if [[ "$nadir_home_pan" =~ ^[0-9]+$ && "$nadir_home_tilt" =~ ^[0-9]+$ && "$nadir_home_zoom" =~ ^[0-9]+$ ]]; then
+      dp=$(( pan - nadir_home_pan )); dt=$(( tilt - nadir_home_tilt )); dz=$(( zoom - nadir_home_zoom ))
+      dp=${dp#-}; dt=${dt#-}; dz=${dz#-}
+      if (( dp <= 200 && dt <= 200 && dz <= 30 )); then continue; fi
+    fi
+    nadir_pan=$pan; nadir_tilt=$tilt; nadir_zoom=$zoom
+    printf -v nadir_sample_at '%(%s)T' -1
+    nadir_ring+=("$nadir_sample_at:$pan/$tilt/$zoom")
+    if (( ${#nadir_ring[@]} > 5 )); then nadir_ring=("${nadir_ring[@]:1}"); fi
+  done
+}
+
+_patrol_nadir_decide() {
+  (( nadir_decided == 0 )) || return 1
+  nadir_decided=1
+  local decision_now age sector lo hi
+  printf -v decision_now '%(%s)T' -1
+  age=$(( decision_now - nadir_sample_at ))
+  if (( _LOG_LEVEL >= 3 )); then log "$cam_name" "debug" "Nadir samples: ${nadir_ring[*]}"; fi
+  if (( nadir_sample_at == 0 || age < 0 || age > 15 )); then
+    log "$cam_name" "debug" "Nadir hand-off skipped: no recent sample (age=${age}s)"
+    return 1
+  fi
+  if (( nadir_tilt < nadir_tilt_min )); then
+    log "$cam_name" "debug" "Nadir hand-off skipped: tilt $nadir_tilt below $nadir_tilt_min"
+    return 1
+  fi
+  for (( sector=0; sector<${#nadir_slots[@]}; sector++ )); do
+    lo=${nadir_pan_mins[$sector]}; hi=${nadir_pan_maxs[$sector]}
+    if (( (lo <= hi && nadir_pan >= lo && nadir_pan <= hi) ||
+          (lo > hi && (nadir_pan >= lo || nadir_pan <= hi)) )); then
+      cue_pending=$nadir_cue_index
+      cue_slots[nadir_cue_index]=${nadir_slots[$sector]}
+      cue_matched_at=$decision_now
+      cue_no_goto=0
+      # Exclude the whole decision second; event starts use milliseconds.
+      nadir_event_cutoff=$(( (decision_now + 1) * 1000 ))
+      log "$cam_name" "info" "Nadir hand-off: last pan $nadir_pan tilt $nadir_tilt zoom $nadir_zoom (${age}s ago) → slot ${nadir_slots[$sector]}"
+      return 0
+    fi
+  done
+  log "$cam_name" "info" "Nadir crossing: last pan $nadir_pan tilt $nadir_tilt zoom $nadir_zoom (${age}s ago) — no sector; using cues"
+  return 1
 }
 
 # Cue completion and pending-cue expiry must clear the same caller-scope state.
 _patrol_end_cue_hold() {
   cue_in_progress=0
+  nadir_event_cutoff=0
   status_idle_state=patrolling
   status_cue_camera=""
   log "$cam_name" "info" "Cue hold ended"
@@ -759,7 +860,12 @@ _patrol_poll_cues() {
   # Current zone presence has priority over a recent event with another status.
   for (( priority=1; priority>=0; priority-- )); do
   for (( i=0; i<${#cue_slots[@]}; i++ )); do
+    (( i != ${nadir_cue_index:--1} )) || continue
     for (( j=0; j<${#event_cameras[@]}; j++ )); do
+      if (( ${nadir_event_cutoff:-0} > 0 && event_starts[j] < nadir_event_cutoff )); then
+        (( debug == 0 )) || cue_skip_reasons["$i:$j"]=before-nadir
+        continue
+      fi
       if (( now < cue_until[i] )); then
         (( debug == 0 )) || cue_skip_reasons["$i:$j"]=cooldown
         continue
@@ -1320,6 +1426,9 @@ patrol_camera() {
   local cue_matched_at=0 cue_poll_failed=0 cue_no_goto=0
   # Failed-goto exhaustion clears last_commanded_slot. Retain the cue target.
   local cue_slot=-1
+  local nadir_enabled=0 nadir_tilt_min=0
+  local nadir_hold=20 nadir_cue_index=-1 nadir_event_cutoff=0
+  local -a nadir_pan_mins=() nadir_pan_maxs=() nadir_slots=()
   _patrol_parse_cues
 
   local constrain_info=""
@@ -1603,6 +1712,9 @@ patrol_camera() {
     local slot="${presets[$idx]}"
     local waited=0
     local hold_reason motion_only_seconds=0 hold_had_tracking=0
+    local nadir_sampling=0 nadir_decided=0 nadir_sample_at=0 nadir_pan=0 nadir_tilt=0 nadir_zoom=0
+    local nadir_home_pan="" nadir_home_tilt="" nadir_home_zoom=""
+    local -a nadir_ring=()
     local tracking_seconds=0 smart_seconds=0 motion_seconds=0 unknown_seconds=0
     # First iteration uses the already-fetched top_state; subsequent iterations
     # fetch fresh state since the camera may have moved during the sleep.
@@ -1619,7 +1731,10 @@ patrol_camera() {
       else
         hold_reason=motion
       fi
-      [[ "$hold_reason" != tracking ]] || hold_had_tracking=1
+      if [[ "$hold_reason" == tracking ]]; then
+        hold_had_tracking=1
+        nadir_decided=0
+      fi
       if (( waited == 0 )); then
         log "$cam_name" "info" "Tracking/motion active — holding ($hold_reason)"
       elif [[ "$hold_reason" == motion ]] && (( motion_only_seconds >= max_wait )); then
@@ -1637,7 +1752,11 @@ patrol_camera() {
         motion) motion_seconds=$(( motion_seconds + 5 )); motion_only_seconds=$(( motion_only_seconds + 5 )) ;;
         unknown) unknown_seconds=$(( unknown_seconds + 5 )) ;;
       esac
-      sleep 5
+      if (( nadir_enabled && hold_had_tracking )); then
+        _patrol_nadir_wait
+      else
+        sleep 5
+      fi
       waited=$((waited + 5))
       api_ensure_auth
       if is_tracking "$cam_id" "$motion_hold" "$last_goto_ts" "$settle_seconds" "$top_state"; then
@@ -1649,8 +1768,13 @@ patrol_camera() {
         local end_position end_pan end_tilt end_zoom
         end_position=$(api_get_ptz_position "$cam_id") || end_position=""
         IFS=$'\t' read -r end_pan end_tilt end_zoom <<< "$end_position"
+        local tracked_info="" ended_now
+        if (( nadir_enabled && nadir_sample_at > 0 )); then
+          printf -v ended_now '%(%s)T' -1
+          tracked_info=" (last tracked pan $nadir_pan tilt $nadir_tilt zoom $nadir_zoom $(( ended_now - nadir_sample_at ))s earlier)"
+        fi
         if [[ "$end_pan" =~ ^[0-9]+$ && "$end_tilt" =~ ^[0-9]+$ && "$end_zoom" =~ ^[0-9]+$ ]]; then
-          log "$cam_name" "info" "Tracking ended at pan $end_pan tilt $end_tilt zoom $end_zoom"
+          log "$cam_name" "info" "Tracking ended at pan $end_pan tilt $end_tilt zoom $end_zoom$tracked_info"
         else
           log "$cam_name" "info" "Tracking ended (position unreadable)"
         fi
@@ -1667,8 +1791,9 @@ patrol_camera() {
         unknown_hold_seconds=0
       fi
       _patrol_status_activity "$activity_active" "$_LAST_ACTIVITY_KNOWN"
-      if (( hold_had_tracking && _LAST_ACTIVITY_KNOWN == 1 && _LAST_SMART_ACTIVE == 0 && _LAST_TRACKING_ACTIVE == 0 )) && [[ -n "$cue_query" ]]; then
-        if _patrol_poll_cues 1; then break; fi
+      if (( hold_had_tracking && _LAST_ACTIVITY_KNOWN == 1 && _LAST_SMART_ACTIVE == 0 && _LAST_TRACKING_ACTIVE == 0 )); then
+        if (( nadir_enabled )) && _patrol_nadir_decide; then break; fi
+        if [[ -n "$cue_query" ]] && _patrol_poll_cues 1; then break; fi
       fi
     done
     if (( waited > 0 )); then
@@ -1684,6 +1809,7 @@ patrol_camera() {
       local cue_age=$(( now - cue_matched_at ))
       if (( cue_age > 15 )); then
         cue_pending=-1
+        nadir_event_cutoff=0
         cue_resume=1
         log "$cam_name" "info" "Cue dropped — ${cue_age}s old"
         if (( cue_in_progress )); then
@@ -1714,6 +1840,7 @@ patrol_camera() {
       slot="${presets[$idx]}"
     fi
     if (( cue_pending >= 0 )); then
+      if (( cue_pending != nadir_cue_index )); then nadir_event_cutoff=0; fi
       slot=${cue_slots[$cue_pending]}
       cue_slot=$slot
       cue_hold=${cue_holds[$cue_pending]}

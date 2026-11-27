@@ -261,6 +261,41 @@ The first event request error logs one warning with the HTTP code and curl exit 
 
 At debug level, `Cue skip` lines give the entry, short event id, event types, and a zone snapshot as `id:status` pairs. The reasons are `cooldown`, `seen`, `camera`, `type`, `zone`, and `window` (too old without current presence, or outside the 120-second window). `Cue fired` gives the same snapshot for a match. Info level adds no lines or jq processes for these diagnostics.
 
+### Nadir Hand-Off
+
+Set `camera_overrides.<ptz id>.nadir_handoff` for a trail that goes below the PTZ. Do not put these settings in `defaults`.
+
+```json
+"nadir_handoff": {
+  "tilt_min": 15800,
+  "hold_seconds": 20,
+  "sectors": [
+    {"pan_min": 34000, "pan_max": 1000, "slot": 3}
+  ]
+}
+```
+
+`tilt_min` must be a non-negative integer in motor steps. Higher tilt points more directly down on the AI PTZ Industrial. `hold_seconds` must be an integer with a minimum of 5. Its default is 20. Each sector must have non-negative integer `pan_min` and `pan_max` values and a preset `slot` from this PTZ. A range with `pan_min > pan_max` goes through zero.
+
+Invalid settings give one warning and disable only nadir hand-off.
+
+An empty `sectors` array selects logging-only mode. After a tracking poll, patrol samples position each second during the activity hold. It reads HomeView one time and ignores positions in its 200 pan, 200 tilt, and 30 zoom step limits. If a position read has an error, patrol keeps the last sample. Without these settings, patrol keeps its five-second sleep and makes no more requests.
+
+Patrol makes one decision after each tracking stretch, at the first readable poll without smart detection or tracking. A new tracking poll lets patrol make one more decision in the same activity hold. The sample must have an age of 15 seconds or less, with tilt at or above `tilt_min`. The first matching sector in config order wins. Range endpoints are included. Patrol also sends a goto when that slot was the last commanded slot, because tracking moved the PTZ.
+
+The sector uses the usual cue acquisition, retry, and resume path. Its dwell uses `hold_seconds`. Its status is `cued`, with `cue_camera` set to `Nadir hand-off`. New PTZ activity uses the usual activity hold.
+
+A cue can stop the crossing hold only if its event starts after the decision second. Events from that second or earlier cannot pull the PTZ back to the entry side. This filter ends with the crossing hold, when a newer cue replaces it, or when that newer cue expires before its goto.
+
+If no sector matches, patrol logs `Nadir crossing` and runs the usual cue re-acquire poll. Empty sectors have the same result. Debug output includes the last five samples and the cause of a skipped decision.
+
+```text
+Nadir hand-off: tilt_min=15800 sectors=0 (logging only)
+Tracking ended at pan 18362 tilt 10914 zoom 0 (last tracked pan 35000 tilt 16000 zoom 0 3s earlier)
+Nadir crossing: last pan 35000 tilt 16000 zoom 0 (3s ago) — no sector; using cues
+Nadir hand-off: last pan 35000 tilt 16000 zoom 0 (3s ago) → slot 3
+```
+
 ### Patrol Schedule
 
 By default, patrol runs 24/7. Add a `schedule` block to restrict patrol to specific time windows. This can be set globally in `defaults` or per-camera in `camera_overrides`.
