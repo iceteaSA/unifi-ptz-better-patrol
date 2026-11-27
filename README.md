@@ -285,7 +285,7 @@ Patrol makes one decision after each tracking stretch, at the first readable pol
 
 The sector uses the usual cue acquisition, retry, and resume path. Its dwell uses `hold_seconds`. Its status is `cued`, with `cue_camera` set to `Nadir hand-off`. New PTZ activity uses the usual activity hold.
 
-A cue can stop the crossing hold only if its event starts after the decision second. Events from that second or earlier cannot pull the PTZ back to the entry side. This filter ends with the crossing hold or when a newer cue replaces it.
+A cue can stop the crossing hold only if its event starts after the decision second. Events from that second or earlier cannot pull the PTZ back to the entry side. This filter ends with the crossing hold, when a newer cue replaces it, or when that newer cue expires before its goto.
 
 If no sector matches, patrol logs `Nadir crossing` and runs the usual cue re-acquire poll. Empty sectors have the same result. Debug output includes the last five samples and the cause of a skipped decision.
 

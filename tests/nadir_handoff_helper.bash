@@ -32,12 +32,14 @@ api_get() {
         shallow) _LAST_BODY='{"steps":{"pan":35000,"tilt":15000,"zoom":0}}' ;;
         flicker)
           if (( FIELD_NOW <= 1005 )); then _LAST_BODY='{"steps":{"pan":35000,"tilt":15000,"zoom":0}}'; fi ;;
+        expire)
+          if (( FIELD_NOW >= 1009 )); then _LAST_BODY='{"steps":{"pan":35000,"tilt":15000,"zoom":0}}'; fi ;;
       esac ;;
     /events*)
       printf '__events now=%s cutoff=%s\n' "$FIELD_NOW" "${nadir_event_cutoff:-0}"
       _LAST_BODY=$CUE_BODY
       case "$NADIR_MODE" in
-        newer|same-second) _LAST_BODY=$NADIR_NEXT ;;
+        newer|same-second|expire) _LAST_BODY=$NADIR_NEXT ;;
       esac ;;
     *) _LAST_BODY=$REACQUIRE_SOURCE_BODY ;;
   esac
@@ -67,6 +69,11 @@ api_get_camera_state() {
     return 0
   fi
   if [[ "$NADIR_MODE" == current ]] && (( FIELD_NOW < 1002 )); then
+    return 0
+  fi
+  # The pre-empting cue waits behind a second tracking hold until it expires.
+  if [[ "$NADIR_MODE" == expire ]] && (( ${cue_pending:--1} >= 0 && FIELD_NOW < 1032 )); then
+    _CACHED_CAM_STATE='{"id":"cam1","state":"CONNECTED","isAutoTracking":true}'
     return 0
   fi
   local tracking_end=1005
@@ -100,7 +107,7 @@ api_post_with_retry() {
   printf '__counts=%s\n' "${counts[*]}" >&2
   printf '__goto=%s now=%s cue=%s source=%s cutoff=%s\n' "${1##*/}" "$FIELD_NOW" "$cue_in_progress" "$status_cue_camera" "$nadir_event_cutoff" >&2
   case "$NADIR_MODE" in
-    handoff|priority|wrap|nomatch|newer|older|same-second|current|pickup|flicker)
+    handoff|priority|wrap|nomatch|newer|older|same-second|current|pickup|flicker|expire)
       FIELD_GOTOS=$(( FIELD_GOTOS + 1 ))
       (( FIELD_GOTOS < NADIR_LIMIT )) || exit 0
       _LAST_HTTP_CODE=200 ;;
@@ -113,20 +120,21 @@ nadir_hold_probe() {
   NADIR_MODE=$1
   NADIR_COUNTS="$BATS_TEST_TMPDIR/nadir-counts"
   : > "$NADIR_COUNTS"
-  FIELD_NOW=1000 CUE_NOW=1000 NADIR_COUNTING=0 FIELD_GOTOS=0
+  FIELD_NOW=1000 CUE_NOW=1000 NADIR_COUNTING=0 FIELD_GOTOS=0 NADIR_LIMIT=3
+  [[ "$NADIR_MODE" != expire ]] || NADIR_LIMIT=4
   FIELD_CONFIG='{"dwell_seconds":6,"ptz_settle_seconds":0,"nadir_handoff":{"tilt_min":15800,"sectors":[]}}'
   [[ "$NADIR_MODE" != disabled ]] || FIELD_CONFIG='{"dwell_seconds":6,"ptz_settle_seconds":0}'
   if [[ "$NADIR_MODE" == cues ]]; then
     FIELD_CONFIG=${FIELD_CONFIG%\}}',"cues":[{"camera_id":"fixed1","slot":4,"zones":["Past pole"]}]}'
   fi
   case "$NADIR_MODE" in
-    handoff|priority|wrap|nomatch|newer|older|same-second|current|pickup|flicker)
+    handoff|priority|wrap|nomatch|newer|older|same-second|current|pickup|flicker|expire)
       FIELD_CONFIG='{"dwell_seconds":6,"ptz_settle_seconds":0,"nadir_handoff":{"tilt_min":15800,"hold_seconds":20,"sectors":[{"pan_min":34000,"pan_max":36000,"slot":4}]}}'
       [[ "$NADIR_MODE" != wrap ]] || FIELD_CONFIG=${FIELD_CONFIG/\"pan_max\":36000/\"pan_max\":1000}
       [[ "$NADIR_MODE" != nomatch ]] || FIELD_CONFIG=${FIELD_CONFIG/\"pan_min\":34000/\"pan_min\":35500}
       [[ "$NADIR_MODE" != current ]] || FIELD_CONFIG=${FIELD_CONFIG/\"slot\":4/\"slot\":0}
       case "$NADIR_MODE" in
-        priority|nomatch|newer|older|same-second)
+        priority|nomatch|newer|older|same-second|expire)
           FIELD_CONFIG=${FIELD_CONFIG%\}}',"cues":[{"camera_id":"fixed1","slot":2,"zones":["Past pole"],"hold_seconds":5}]}' ;;
       esac ;;
   esac

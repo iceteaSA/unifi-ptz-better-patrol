@@ -166,6 +166,16 @@ load nadir_handoff_helper
   assert_contains "$output" '__hold source=Horsetrail Up cutoff=0 slot=2'
 }
 
+@test "an expired pre-empting cue clears the nadir event cutoff" {
+  run nadir_hold_probe expire
+  assert_contains "$output" '(pre-empts Nadir hand-off)'
+  assert_contains "$output" 'Cue dropped — 25s old'
+  local after=${output#*Cue dropped}
+  assert_contains "$after" '__goto=0 now=1035 cue=0 source= cutoff=0'
+  assert_contains "$after" '__events now=1037 cutoff=0'
+  assert_not_contains "$after" 'cutoff=1006000'
+}
+
 @test "nadir handoff sends a goto even for the last commanded slot" {
   run nadir_hold_probe current
   assert_contains "$output" '__goto=0 now=1000 cue=0 source='
